@@ -704,7 +704,7 @@
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
         }
 
-        // Fast silence debounce (650ms): sends speech turn promptly once speaker pauses
+        // Fast silence debounce (400ms): sends speech turn promptly once speaker pauses
         if (accumulatedTranscript.length > 0 || currentText.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
@@ -716,7 +716,7 @@
               sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 650);
+          }, 400);
         }
       };
 
@@ -1010,7 +1010,6 @@
     async function playSpeech(text) {
       stopAudio();
       isHeroSpeaking = true;
-      stopRecognitionSafe();
       setCoreState("core-speaking");
       updateStatus("Hero is speaking...", "purple");
 
