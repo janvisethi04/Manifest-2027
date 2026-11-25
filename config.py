@@ -26,8 +26,18 @@ CEREMONIAL_CLOSE_STATEMENT = (
     "Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise."
 )
 
-# VPS Claude Code Bridge Configuration
-USE_VPS_CLAUDE = False                          # Set True to use VPS Claude Code
-VPS_CLAUDE_URL = "http://127.0.0.1:5001/chat"   # Tunnels via SSH (or VPS Public IP)
-VPS_CLAUDE_TOKEN = ""                           # Read from bridge_token.txt
+# Helper to load .env safely without third-party dependencies
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ[k.strip()] = v.strip()
+
+# VPS Claude Code Bridge Configuration (Secured via .env)
+USE_VPS_CLAUDE = os.getenv("USE_VPS_CLAUDE", "False").lower() in ["true", "1", "yes"]
+VPS_CLAUDE_URL = os.getenv("VPS_CLAUDE_URL", "http://127.0.0.1:5001/chat")
+VPS_CLAUDE_TOKEN = os.getenv("VPS_CLAUDE_TOKEN", "")
 
