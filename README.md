@@ -1,113 +1,146 @@
-# Converse AI – Manifest 2027
-### Personalized Voice Sanctuary & Manifestation Platform
+# 🕯️ Hero: Manifest 2027 AI Voice Agent
 
-An intimate, emotionally intelligent manifestation experience where users reflect on their journey, schedule a ceremonial voice session with **Hero** (an AI companion mirroring their potential), and receive a bespoke **Miro Manifestation Board** based on their genuine words.
-
----
-
-## 🌟 Key Architecture & Capabilities
-
-1. **Custom Real-Time Voice Engine (Zero-Cost Local Pipeline)**:
-   - **Continuous STT:** Low-latency real-time microphone stream with hardware-level Acoustic Echo Cancellation (AEC) and noise suppression.
-   - **Barge-In / Interruption Engine:** Instant audio cutoff (<10ms) when the user speaks while Hero is talking, with seamless turn recovery.
-   - **Hero Ceremonial Brain:** Strict 7-stage dialogue state machine following the Master System Prompt:
-     1. *Open* (Light ritual & dream out loud)
-     2. *Pride* (2026 savouring)
-     3. *The 2027 Pride* (Closing the audacity gap)
-     4. *The Character as a Scene* (Movie scene & naming)
-     5. *Grounding* (Evidence of past feats)
-     6. *Mirror* (Revelation & reflection)
-     7. *Exact Close:* *"Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise."*
-   - **TTS:** Studio-grade natural neural voice synthesis via Edge-TTS.
-
-2. **ElevenLabs Agent Integration**:
-   - Production-ready configuration for ElevenLabs Conversational AI (`agent_1401m86ep0mnewcs2x1wth46mmy9`).
-   - Dynamic variable injection: `{{user_name}}`, `{{preferred_language}}`, `{{pre_call_context}}`, `{{user_qualities}}`.
-   - Automated 1-click Python provisioning script (`setup_agent.py`).
-
-3. **Dynamic Celestial Dark Theming**:
-   - Deep Midnight Obsidian default aesthetic (`#0B0813`, `#161124`, Starlight Gold `#CCA456`, Soft Lavender `#A78BFA`).
-   - Live color-shifting UI that adapts based on user questionnaire answers & elements:
-     - 🔥 **Midnight Phoenix (Fire):** Charcoal & Amber Rose
-     - 🌊 **Abyssal Moonlit (Water):** Deep Navy & Starlight Cyan
-     - 🌿 **Forest Moss & Stone (Earth):** Emerald Pine & Champagne Gold
-     - 🌌 **Starlight Horizon (Air):** Twilight Indigo & Stardust
-
-4. **Input Quality & Anti-Abuse Safeguards**:
-   - **Strict Email Verification:** Rejects disposable/burner domains (`tempmail`, `mailinator`, etc.) and keyboard-mash patterns (`asdf@asdf`, `test@test`).
-   - **Vague Answer Helper:** Detects short/generic inputs ("idk", "money", "nothing") and offers instant clickable thought-starter prompts.
-
-5. **Appointment Booking Sanctuary (`/booking`)**:
-   - 15-minute slot reservation across morning, afternoon, and evening slots.
-   - Automatic local timezone detection (`Intl.DateTimeFormat`).
-   - Double-booking prevention and booking confirmation dispatch.
-
-6. **Miro Board Manifestation Engine & Email Delivery**:
-   - Generates personalized Miro board containing 5 color-coded sticky notes (2027 Vision, 2026 Grounding Feat, Archetype Card, Quote, and Qualities).
-   - Instant in-app interactive scrapbook canvas with PNG/PDF export.
-   - Dispatches confirmation emails with private board access.
+> A pure Python conversational voice agent designed as a sacred mirror of potential for **Manifest 2027**.  
+> Features studio-quality neural voices, continuous microphone listening, dynamic voice activity detection (VAD), and **real-time barge-in / interruption handling (<10ms latency)** with zero third-party platform lock-in (no ElevenLabs subscription needed).
 
 ---
 
-## 🚀 Quick Start
+## 🌟 Key Highlights
 
-### Prerequisites
-- Node.js v18+ or v20+
-- Python 3.10+ (for Edge-TTS neural voice synthesis)
+- **Pure Python Voice Agent**: No web frameworks or unnecessary frontends—engineered from the ground up as an interactive voice agent (`main.py`).
+- **Real-Time Barge-In (<10ms)**: When you speak while Hero is speaking, Hero cuts audio playback instantly, acknowledges the interruption naturally (`"Got you"`, `"Understood"`), and seamlessly adapts the conversation flow.
+- **7-Stage Ceremonial Brain**: Strictly executes the sacred Manifest 2027 dialogue progression with gentle guidance, never interrogating, and ends on the exact ceremonial statement.
+- **Studio-Quality Neural Voices**: Powered by Edge-TTS neural models (`en-US-ChristopherNeural`, `hi-IN-MadhurNeural`, `en-US-AvaNeural`) with zero cost and zero API keys.
+- **Continuous STT & VAD**: Uses adaptive ambient noise calibration, microphone streaming, and voice activity detection.
 
-### 1. Install Dependencies
+---
+
+## 🏛️ Architecture Flow
+
+```
+   ┌─────────────────────────────────────────────────────────┐
+   │                  Microphone Input                       │
+   └─────────────────────────┬───────────────────────────────┘
+                             │
+                             ▼
+   ┌─────────────────────────────────────────────────────────┐
+   │                 STT & VAD Engine                        │
+   │  (Ambient Calibration, Speech Detection & Transcribe)   │
+   └─────────────┬───────────────────────────┬───────────────┘
+                 │                           │
+          [Voice Detected]              [Transcript]
+                 │                           │
+                 ▼                           ▼
+   ┌──────────────────────────┐    ┌─────────────────────────┐
+   │ Instant Barge-in Cutoff  │    │     7-Stage Brain       │
+   │  (Stops TTS in <10ms)    │    │ (Projection & Grounding)│
+   └──────────────────────────┘    └─────────┬───────────────┘
+                                             │
+                                       [Hero Response]
+                                             │
+                                             ▼
+                                   ┌─────────────────────────┐
+                                   │     Edge-TTS Engine     │
+                                   │ (Studio Neural Playback)│
+                                   └─────────────────────────┘
+```
+
+---
+
+## 📜 The 7 Ceremonial Stages
+
+1. **Open**: Light ritual greeting to dream out loud about 2027.
+2. **Pride 2026**: Savouring what you achieved in 2026.
+3. **Pride 2027 (Audacity Gap)**: Expanding the vision into what you want to be deeply proud of in 2027, including day-in-the-life morning visualization.
+4. **Movie Scene & Character**: Naming the character archetype and visualizing the pivotal scene.
+5. **Grounding**: Uncovering past real-life proof and evidence of diligence from your own journey.
+6. **Mirror Revelation**: Reflecting your core qualities and evidence back to you with a sacred pause.
+7. **Exact Close**:
+   > *"Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise."*
+
+---
+
+## 🚀 Quickstart Guide
+
+### 1. Installation
+
+Clone the repository and install dependencies:
+
 ```bash
-cd frontend
-npm install
+git clone https://github.com/janvisethi04/Manifest-2027.git
+cd Manifest-2027
+
+# Install Python requirements
+pip install -r requirements.txt
 ```
 
-### 2. Install Python Voice Engine Dependencies
+### 2. Run in Live Voice Mode (Microphone + Speaker)
+
+Put on your headphones or use your speakers/mic, and start:
+
 ```bash
-pip install edge-tts
+python main.py
 ```
+*Hero will calibrate to your room's ambient noise, speak the welcome ritual, and listen for your voice.*
 
-### 3. Run Development Server
+### 3. Run in Hybrid Mode (Keyboard + Speaker)
+
+If you don't have a microphone handy or want to test via keyboard:
+
 ```bash
-npm run dev
+python main.py --mode text
+```
+*You type your responses; Hero speaks back aloud in high-definition voice.*
+
+### 4. Hindi / Hinglish Voice
+
+To experience the ceremony in a natural Hindi/Hinglish tone:
+
+```bash
+python main.py --voice hindi
 ```
 
-Visit **http://localhost:3000** in your browser.
+### 5. Run Verification Test Suite
 
----
+Run the automated integration tests verifying all 7 stages, barge-in recovery, vague answer handling, and TTS latency:
 
-## 📂 Project Structure
-
-```
-converse-ai-manifest-2027/
-├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── page.tsx               # Landing Page
-│   │   │   ├── questionnaire/page.tsx # 6-Step Reflective Questionnaire
-│   │   │   ├── booking/page.tsx       # Appointment Slot Booking
-│   │   │   ├── call/page.tsx          # Real-Time Voice Sanctuary with Hero
-│   │   │   ├── board/page.tsx         # Miro & Canvas Manifestation Board
-│   │   │   └── api/
-│   │   │       ├── voice/hero-brain/  # 7-Stage Ceremonial Dialogue Engine
-│   │   │       ├── voice/tts/         # Edge-TTS Neural Voice Generator
-│   │   │       ├── miro/create-board/ # Miro REST API Board Builder
-│   │   │       └── email/send-manifestation/ # Email Dispatcher
-│   │   ├── context/ThemeContext.tsx   # Dynamic Theme Controller
-│   │   ├── lib/validation.ts          # Strict Email & Vague Answer Engine
-│   │   └── types/                     # TypeScript Interfaces
-├── hero-agent/
-│   ├── hero_system_prompt.txt         # Master 7-Stage System Prompt
-│   ├── elevenlabs_agent_config.json   # ElevenLabs Agent Blueprint
-│   ├── setup_agent.py                 # Automated Agent Provisioner
-│   └── hero_voice_tester.html         # Standalone Voice Tester
-├── test_hero_conversation.py          # Automated Multi-Turn Test Suite
-└── README.md
+```bash
+python main.py --test
+# or
+python test_agent.py
 ```
 
 ---
 
-## 🔒 Privacy & Ethical AI Standards
+## 📁 Repository Structure
 
-- Zero unauthorized selling or sharing of personal reflection data.
-- Hero strictly preserves emotional boundaries, never claiming to be a therapist.
-- User retains full ownership of their manifestation boards and data.
+```
+.
+├── config.py             # Voice choices, STT thresholds, timeouts, and closing text
+├── brain.py              # 7-stage dialogue state machine, context, and recovery logic
+├── stt.py                # Speech-to-Text & real-time Voice Activity Detection (VAD)
+├── tts.py                # Edge-TTS synthesizer with instant <10ms stop playback
+├── agent.py              # Central orchestrator handling the audio loop & barge-in
+├── main.py               # Command-line entry point with CLI options
+├── test_agent.py         # Automated test suite (Stages, Barge-in, TTS latency)
+├── requirements.txt      # Python dependencies
+└── README.md             # Project documentation
+```
+
+---
+
+## ⚡ Real-Time Barge-In Details
+
+In real human conversations, people interrupt or interject naturally. Hero mirrors this behavior:
+
+1. While Hero is speaking, `STTEngine` listens via non-blocking audio detection.
+2. The moment voice energy is registered from the user, an interrupt event fires immediately.
+3. `TTSEngine.stop()` cuts Pygame mixer audio within **<10ms**.
+4. Hero listens to the user's interjection and sets `was_interrupted = True`.
+5. Hero's Brain resumes with natural conversational prefixes (`"Got you."`, `"Understood."`, `"I hear you."`), seamlessly progressing without broken state.
+
+---
+
+## 🛡️ License
+
+MIT License. Designed with care for Manifest 2027.

@@ -1,0 +1,7 @@
+# Hero: Manifest 2027 Voice Agent Dependencies
+edge-tts>=7.3.1
+pygame>=2.6.1
+sounddevice>=0.5.6
+SpeechRecognition>=3.17.0
+faster-whisper>=1.0.0
+torch>=2.0.0
