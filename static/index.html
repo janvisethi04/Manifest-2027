@@ -299,7 +299,7 @@
         <div id="ring2" class="orbital-ring ring-2"></div>
 
         <!-- Central Holographic Fluid Orb -->
-        <div id="coreOrb" onclick="toggleCall()" class="celestial-core core-idle"></div>
+        <div id="coreOrb" onclick="handleOrbClick()" class="celestial-core core-idle" title="Click to speak or interrupt"></div>
 
         <!-- Fluid Audio Waves Overlay -->
         <div id="audioVisualizer" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40 transition-opacity">
@@ -597,32 +597,72 @@
       coreQualities: ["Quiet Intuition", "Resilience", "Creative Sovereignty"]
     };
 
+    let isRecognitionRunning = false;
+
+    function handleOrbClick() {
+      if (!isCallActive) {
+        startCall();
+      } else if (isHeroSpeaking) {
+        // User deliberately tapped central orb to interrupt Hero!
+        triggerBargeIn();
+      }
+    }
+
+    function startRecognitionSafe() {
+      if (!recognition || isMuted || !isCallActive || isHeroSpeaking || isRecognitionRunning) return;
+      try {
+        recognition.start();
+        isRecognitionRunning = true;
+      } catch (e) {
+        // Recognition already active
+      }
+    }
+
+    function stopRecognitionSafe() {
+      if (!recognition) return;
+      try {
+        recognition.stop();
+      } catch (e) {}
+      isRecognitionRunning = false;
+    }
+
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         console.warn("Web Speech API is not supported on this browser.");
+        updateStatus("Web Speech not supported in this browser. Please use Chrome/Edge.", "rose");
         return;
+      }
+
+      if (recognition) {
+        try { recognition.abort(); } catch(e) {}
       }
 
       recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      // en-IN accurately recognizes Indian English, Hindi phonetics, and Indian names (e.g. Janvi, Rahul)
+      // en-IN recognizes Indian English, Hindi phonetics, and Indian names (e.g. Janvi, Rahul)
       recognition.lang = 'en-IN';
 
       recognition.onstart = () => {
-        setCoreState("core-listening");
-        updateStatus("Hero is listening...", "emerald");
+        isRecognitionRunning = true;
+        if (!isHeroSpeaking) {
+          setCoreState("core-listening");
+          updateStatus("Hero is listening... (Speak freely)", "emerald");
+        }
         utteranceStartTime = Date.now();
       };
 
       recognition.onspeechstart = () => {
-        if (isHeroSpeaking) {
-          triggerBargeIn();
-        }
+        // PREVENT SELF-CUTOFF: If Hero is speaking through speakers, ignore acoustic echo!
+        if (isHeroSpeaking) return;
+        setCoreState("core-listening");
       };
 
       recognition.onresult = (event) => {
+        // Discard microphone input while Hero is speaking to eliminate speaker-echo truncation!
+        if (isHeroSpeaking) return;
+
         let interimTranscript = '';
         let finalTranscript = '';
 
@@ -637,7 +677,7 @@
 
         const currentText = (accumulatedTranscript + " " + finalTranscript + " " + interimTranscript).trim();
         
-        // Live speech preview
+        // Show live real-time speech preview in input box
         const chatInput = document.getElementById("chatInput");
         if (chatInput && currentText) {
           chatInput.placeholder = `Listening: "${currentText}"...`;
@@ -647,33 +687,45 @@
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
         }
 
-        // Fast silence debounce (600ms): sends speech turn promptly once speaker pauses
+        // Fast silence debounce (650ms): sends speech turn promptly once speaker pauses
         if (accumulatedTranscript.length > 0 || currentText.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
             const textToSend = (accumulatedTranscript || currentText).trim();
-            if (textToSend.length > 0) {
-              const wasInterrupted = isHeroSpeaking;
-              if (isHeroSpeaking) triggerBargeIn();
-
+            if (textToSend.length > 0 && !isHeroSpeaking) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
               accumulatedTranscript = "";
               if (chatInput) chatInput.placeholder = "Type a thought or speak freely...";
-              sendTurn(textToSend, wasInterrupted, durationSec);
+              sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 600);
+          }, 650);
         }
       };
 
       recognition.onerror = (event) => {
-        if (event.error === 'no-speech') return;
-        console.warn("Speech recognition warning:", event.error);
+        isRecognitionRunning = false;
+        console.warn("Speech recognition event:", event.error);
+        if (event.error === 'no-speech') {
+          return;
+        }
+        if (event.error === 'language-not-supported') {
+          // Fallback to browser language
+          recognition.lang = navigator.language || 'en-US';
+          setTimeout(startRecognitionSafe, 200);
+          return;
+        }
+        if (event.error === 'not-allowed') {
+          updateStatus("Microphone access blocked. Click lock icon in address bar to allow.", "rose");
+        }
       };
 
       recognition.onend = () => {
-        if (isCallActive && !isMuted) {
-          try { recognition.start(); } catch(e) {}
+        isRecognitionRunning = false;
+        if (isCallActive && !isMuted && !isHeroSpeaking) {
+          setTimeout(() => {
+            startRecognitionSafe();
+          }, 150);
         }
       };
     }
@@ -683,7 +735,23 @@
       else endCall();
     }
 
-    function startCall() {
+    async function startCall() {
+      // 1. Explicitly prompt user for microphone permission with Echo Cancellation
+      try {
+        if (!window.micStream) {
+          window.micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("Microphone access request:", err);
+        updateStatus("Microphone access needed. Please allow in browser address bar.", "rose");
+      }
+
       isCallActive = true;
       const btn = document.getElementById("callButton");
       btn.className = "flex items-center space-x-2 bg-gradient-to-r from-rose-500 to-rose-600 hover:opacity-95 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-rose-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
@@ -695,9 +763,7 @@
       updateStatus("Connected in Ceremony", "cyan");
 
       initSpeechRecognition();
-      if (recognition && !isMuted) {
-        try { recognition.start(); } catch(e) {}
-      }
+      startRecognitionSafe();
 
       sendTurn("", false, 0.0);
     }
@@ -705,9 +771,7 @@
     function endCall() {
       isCallActive = false;
       stopAudio();
-      if (recognition) {
-        try { recognition.stop(); } catch(e) {}
-      }
+      stopRecognitionSafe();
 
       const btn = document.getElementById("callButton");
       btn.className = "flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
@@ -726,22 +790,25 @@
         label.innerText = "Unmute";
         icon.classList.remove("text-cyan-600");
         icon.classList.add("text-rose-500");
-        if (recognition) try { recognition.stop(); } catch(e) {}
+        stopRecognitionSafe();
       } else {
         label.innerText = "Mute";
         icon.classList.remove("text-rose-500");
         icon.classList.add("text-cyan-600");
-        if (isCallActive && recognition) try { recognition.start(); } catch(e) {}
+        if (isCallActive && !isHeroSpeaking) startRecognitionSafe();
       }
     }
 
     function triggerBargeIn() {
       interruptCount++;
       stopAudio();
+      isHeroSpeaking = false;
       setCoreState("core-interrupted");
       setTimeout(() => {
         setCoreState("core-listening");
-      }, 350);
+        updateStatus("Hero is listening... (Speak freely)", "emerald");
+        startRecognitionSafe();
+      }, 300);
     }
 
     function stopAudio() {
@@ -899,6 +966,9 @@
       setCoreState("core-speaking");
       updateStatus("Hero is speaking...", "purple");
 
+      // While Hero is speaking, pause microphone to completely eliminate speaker acoustic echo!
+      stopRecognitionSafe();
+
       try {
         const audioUrl = `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`;
         currentAudio = new Audio(audioUrl);
@@ -907,23 +977,29 @@
           isHeroSpeaking = false;
           if (isCallActive) {
             setCoreState("core-listening");
-            updateStatus("Hero is listening...", "emerald");
+            updateStatus("Hero is listening... (Speak freely)", "emerald");
             utteranceStartTime = Date.now();
+            // Hero finished speaking! Prime microphone to listen immediately
+            startRecognitionSafe();
           } else {
             setCoreState("core-idle");
             updateStatus("Ready", "slate");
           }
         };
 
-        currentAudio.onerror = () => {
+        currentAudio.onerror = (e) => {
+          console.warn("Audio playback error:", e);
           isHeroSpeaking = false;
-          setCoreState("core-idle");
+          setCoreState("core-listening");
+          if (isCallActive) startRecognitionSafe();
         };
 
         await currentAudio.play();
       } catch (e) {
+        console.warn("Audio play error:", e);
         isHeroSpeaking = false;
-        setCoreState("core-idle");
+        setCoreState("core-listening");
+        if (isCallActive) startRecognitionSafe();
       }
     }
 

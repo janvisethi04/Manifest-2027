@@ -14,7 +14,7 @@ import webbrowser
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse, Response
 from pydantic import BaseModel
 import uvicorn
 import edge_tts
@@ -91,7 +91,7 @@ async def generate_tts(
     rate: Optional[str] = "+0%",
     pitch: Optional[str] = "+0Hz"
 ):
-    """Synthesize text with emotional modulation (rate, pitch) streaming MP3 chunks directly for ultra-low latency."""
+    """Synthesize text into complete in-memory MP3 bytes with Content-Length to prevent browser cutoff."""
     if not text or not text.strip():
         return JSONResponse({"error": "Empty text"}, status_code=400)
     
@@ -99,31 +99,45 @@ async def generate_tts(
     rate_val = rate or "+0%"
     pitch_val = pitch or "+0Hz"
     
-    async def audio_stream():
+    try:
+        communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
+        chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        audio_bytes = b"".join(chunks)
+        
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Length": str(len(audio_bytes)),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+                "Content-Disposition": "inline; filename=speech.mp3"
+            }
+        )
+    except Exception as e:
+        print(f"[TTS Stream Error] {e}")
         try:
-            communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
-            async for chunk in communicate.stream():
+            fallback = edge_tts.Communicate(text, voice_name)
+            chunks = []
+            async for chunk in fallback.stream():
                 if chunk["type"] == "audio":
-                    yield chunk["data"]
-        except Exception as e:
-            print(f"[TTS Stream Error] {e}")
-            # Fallback to unmodulated stream if error occurred
-            try:
-                fallback = edge_tts.Communicate(text, voice_name)
-                async for chunk in fallback.stream():
-                    if chunk["type"] == "audio":
-                        yield chunk["data"]
-            except Exception as e2:
-                print(f"[TTS Fallback Error] {e2}")
-
-    return StreamingResponse(
-        audio_stream(),
-        media_type="audio/mpeg",
-        headers={
-            "Cache-Control": "no-cache",
-            "Content-Disposition": "inline; filename=speech.mp3"
-        }
-    )
+                    chunks.append(chunk["data"])
+            fallback_bytes = b"".join(chunks)
+            return Response(
+                content=fallback_bytes,
+                media_type="audio/mpeg",
+                headers={
+                    "Content-Length": str(len(fallback_bytes)),
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "no-cache"
+                }
+            )
+        except Exception as e2:
+            print(f"[TTS Fallback Error] {e2}")
+            return JSONResponse({"error": str(e2)}, status_code=500)
 
 def run_app(port: int = 8000, open_browser: bool = False):
     print("=" * 65)
