@@ -28,6 +28,8 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR, exist_ok=True)
 
+SESSION_STORE: Dict[str, HeroBrain] = {}
+
 class ChatRequest(BaseModel):
     user_message: str = ""
     was_interrupted: bool = False
@@ -35,6 +37,7 @@ class ChatRequest(BaseModel):
     voice: Optional[str] = DEFAULT_VOICE
     context: Optional[Dict[str, Any]] = None
     audio_duration_sec: Optional[float] = 0.0
+    session_id: Optional[str] = "default"
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_agent_ui():
@@ -47,8 +50,18 @@ async def serve_agent_ui():
 
 @app.post("/api/chat")
 async def process_chat_turn(req: ChatRequest):
-    """Process conversation turn with full sentiment, prosody & emotional arc awareness."""
-    brain = HeroBrain(context=req.context or {})
+    """Process conversation turn with full persistent session sentiment, prosody & emotional arc awareness."""
+    sess_id = req.session_id or "default"
+    
+    # Maintain stateful session brain
+    if req.current_stage == 1 or sess_id not in SESSION_STORE:
+        brain = HeroBrain(context=req.context or {})
+        SESSION_STORE[sess_id] = brain
+    else:
+        brain = SESSION_STORE[sess_id]
+        if req.context:
+            brain.context.update(req.context)
+            
     brain.current_stage = req.current_stage
     
     turn_result = brain.process_turn(
