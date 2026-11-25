@@ -36,8 +36,8 @@ if os.path.exists(env_path):
                 k, v = line.split("=", 1)
                 os.environ[k.strip()] = v.strip()
 
-# VPS Claude Code Bridge Configuration (Secured via .env)
-USE_VPS_CLAUDE = os.getenv("USE_VPS_CLAUDE", "False").lower() in ["true", "1", "yes"]
-VPS_CLAUDE_URL = os.getenv("VPS_CLAUDE_URL", "http://127.0.0.1:5001/chat")
-VPS_CLAUDE_TOKEN = os.getenv("VPS_CLAUDE_TOKEN", "")
+# VPS Claude Code Bridge Configuration (Secured via .env or production defaults)
+USE_VPS_CLAUDE = os.getenv("USE_VPS_CLAUDE", "True").lower() in ["true", "1", "yes"]
+VPS_CLAUDE_URL = os.getenv("VPS_CLAUDE_URL", "https://147.93.31.18/claude/chat")
+VPS_CLAUDE_TOKEN = os.getenv("VPS_CLAUDE_TOKEN", "52966656f00195e84edae3746a80827308c6e1cbed98c51170abd1496165372e")
 

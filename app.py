@@ -88,9 +88,13 @@ async def process_chat_turn(req: ChatRequest):
         audio_duration_sec=req.audio_duration_sec or 0.0
     )
     
+    src = turn_result.get("source", "fallback")
+    print(f"\n[Turn Completed] Stage {turn_result['current_stage']} ({turn_result['stage_name']}) | Source: {src.upper()} | Spoken: '{turn_result['hero_response'][:75]}...'")
+
     return JSONResponse({
         "success": True,
         "session_id": sess_id,
+        "source": src,
         "hero_response": turn_result["hero_response"],
         "current_stage": turn_result["current_stage"],
         "stage_name": turn_result["stage_name"],

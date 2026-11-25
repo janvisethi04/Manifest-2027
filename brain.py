@@ -94,12 +94,14 @@ class HeroBrain:
         self.emotion_engine = EmotionEngine()
         self.prosody_engine = ProsodyEngine()
         self.arc_engine = EmotionalArcEngine()
+        self.stage_attempts: Dict[int, int] = {i: 0 for i in range(1, 8)}
 
     def reset(self):
         self.current_stage = 1
         self.history = []
         self.is_finished = False
         self.user_name = self.context.get("user_name", "").strip()
+        self.stage_attempts = {i: 0 for i in range(1, 8)}
         self.manifestation_data = {
             "user_name": self.user_name,
             "pride_2026": "",
@@ -225,9 +227,10 @@ USER JUST SAID:
 CRITICAL CONVERSATIONAL RULES:
 1. Speak as Hero in 1-2 spoken sentences only. Highly conversational, warm, human. Not scripted, not like a survey.
 2. If the user speaks Hindi, Hinglish, or casual Indian phrases (e.g. 'kuch nahi', 'bahut thak gaye', 'roller coaster tha', 'haan'), match their warmth naturally with grounded bilingual comfort.
-3. If the user gave a greeting ('hi', 'hey'), an evasive answer ('nothing', 'idk', 'not sure'), or shared difficulty/pain ('roller coaster', 'bad year'):
+3. If the user gave an evasive answer ('nothing', 'idk', 'kuch nahi', 'not much'), or shared difficulty/pain ('roller coaster', 'bad year', 'burnout'):
    - Set ADVANCE_STAGE: NO.
-   - Do NOT give robotic scripted advice or poetic clichés. Validate their reality with genuine human warmth and gently invite them to share one small moment.
+   - Do NOT give robotic scripted advice, repeat greetings, or re-ask the exact same canned question.
+   - Validate their reality with genuine human compassion (e.g., acknowledge that looking back on an exhausting year can make finding something to celebrate feel almost impossible, but just surviving and holding on is a quiet victory). Gently ask if there was even one quiet choice or hard day they got through, without pressure.
 4. Only if the user actually answered the stage requirement:
    - Set ADVANCE_STAGE: YES.
    - Extract the CAPTURED_FIELD and CAPTURED_VALUE.
@@ -274,8 +277,14 @@ CAPTURED_VALUE: <extracted value or NONE>
     ) -> Tuple[str, bool]:
         """Intelligent, Goal-Gated Fallback when Claude is offline."""
         msg_lower = user_msg.lower().strip()
-        is_greeting = any(g in msg_lower for g in ["hi", "hello", "hey", "namaste", "sup"]) and len(msg_lower) < 15
-        is_evasive = any(e in msg_lower for e in ["nothing", "idk", "not sure", "dont know", "don't know", "none", "roller coaster", "bad", "terrible", "hard year"])
+        words = set(re.findall(r"\b[a-z']+\b", msg_lower))
+
+        # Strict word-boundary greeting detection: never falsely trigger on words like "nothing", "this", "shine"
+        is_greeting = bool(words & {"hi", "hello", "hey", "namaste", "sup", "yo", "hola", "heyy", "hii", "hie"}) and len(msg_lower) < 20
+        is_evasive = bool(
+            words & {"nothing", "none", "idk", "zero", "kuch", "nah", "nope"}
+            or any(phrase in msg_lower for phrase in ["not sure", "dont know", "don't know", "roller coaster", "hard year", "bad year", "kuch nahi", "nothing really", "not much", "no idea", "not really", "nothing special"])
+        )
 
         prefix = ""
         if was_interrupted:
@@ -309,18 +318,26 @@ CAPTURED_VALUE: <extracted value or NONE>
                 )
 
         elif self.current_stage == 2:
+            self.stage_attempts[2] += 1
             if is_greeting:
                 return (
-                    f"{prefix}Hi {self.user_name}, so glad you're here. Let's take a breath together. "
-                    "Looking back at 2026, what's one thing you did that you feel proud of, big or quiet?",
+                    f"{prefix}Hi {self.user_name}, so glad you're here with us. Let's take an easy breath together. "
+                    "Looking back across 2026, what's one thing from that year you feel proud of, big or quiet?",
                     False
                 )
             if is_evasive or hesitation_bridge:
-                return (
-                    f"{prefix}{hesitation_bridge}We hear you... when a year feels like a roller coaster, even just holding on through hard days is a feat. "
-                    "Was there even one small choice you made, or one hard moment you got through?",
-                    False
-                )
+                if self.stage_attempts[2] <= 1:
+                    return (
+                        f"{prefix}I know it's hard when you look back and feel like there was nothing. A heavy year takes so much out of us just to make it through, and surviving that is something to honor... Was there even one quiet choice you made for yourself, or one hard day you got through?",
+                        False
+                    )
+                else:
+                    # User affirmed 2026 was tough or empty - honor their quiet resilience and smoothly carry them forward
+                    self.manifestation_data["pride_2026"] = user_msg or "quiet resilience through hard days"
+                    return (
+                        f"{prefix}That is completely okay, {self.user_name}. You don't have to force a highlight reel here. Just waking up and continuing forward on the hardest days is a quiet victory. Let's carry that resilience forward: looking ahead into 2027, what do you want to feel deeply, audaciously proud of?",
+                        True
+                    )
             # User gave a real answer
             self.manifestation_data["pride_2026"] = user_msg
             return (
@@ -330,12 +347,19 @@ CAPTURED_VALUE: <extracted value or NONE>
             )
 
         elif self.current_stage == 3:
-            if is_evasive or len(msg_lower) < 5:
-                return (
-                    f"{prefix}{hesitation_bridge}Don't hold back on the audacity. If nothing held you back, "
-                    "what does that 2027 victory feel like? What does your morning look like?",
-                    False
-                )
+            self.stage_attempts[3] += 1
+            if is_evasive or len(msg_lower) < 4:
+                if self.stage_attempts[3] <= 1:
+                    return (
+                        f"{prefix}{hesitation_bridge}Don't hold back on the audacity. Even if it feels far away right now—if you knew you couldn't fail, what's one dream you'd love to claim in 2027?",
+                        False
+                    )
+                else:
+                    self.manifestation_data["pride_2027"] = user_msg or "peace, sovereignty and clarity"
+                    return (
+                        f"{prefix}Let's make it simple: picture one morning in 2027 where you wake up feeling completely at ease with your life. Which scene do you see in your mind?",
+                        True
+                    )
             self.manifestation_data["pride_2027"] = user_msg
             return (
                 f"{prefix}Feel the energy in that dream. Picture your 2027 like a movie scene. "
@@ -401,6 +425,7 @@ CAPTURED_VALUE: <extracted value or NONE>
 
         hero_response = ""
         should_advance = False
+        source = "ceremonial"
 
         # Stage 1 is the ceremonial opening (Ask Name if not provided)
         if self.current_stage == 1:
@@ -449,6 +474,7 @@ CAPTURED_VALUE: <extracted value or NONE>
                 reply, adv, field, val = claude_result
                 hero_response = reply
                 should_advance = adv
+                source = "claude"
                 if field and val:
                     self.manifestation_data[field] = val
                     if field == "user_name":
@@ -456,6 +482,7 @@ CAPTURED_VALUE: <extracted value or NONE>
             else:
                 # Intelligent Fallback
                 hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
+                source = "fallback"
 
             # Advance stage only if the goal was genuinely unlocked
             if should_advance:
@@ -466,6 +493,7 @@ CAPTURED_VALUE: <extracted value or NONE>
         self.history.append({"speaker": "hero", "text": hero_response})
 
         return {
+            "source": source,
             "hero_response": hero_response,
             "current_stage": self.current_stage,
             "stage_name": STAGE_NAMES.get(self.current_stage, "UNKNOWN"),
