@@ -1,4 +1,6 @@
 # Hero: Manifest 2027 Voice Agent Dependencies
+fastapi>=0.109.0
+uvicorn>=0.27.0
 edge-tts>=7.3.1
 pygame>=2.6.1
 sounddevice>=0.5.6
