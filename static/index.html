@@ -602,6 +602,7 @@
     let isRecognitionRunning = false;
     let isRecognitionStarting = false;
     let restartTimer = null;
+    let isCeremonyFinished = false;
 
     function handleOrbClick() {
       if (!isCallActive) {
@@ -677,8 +678,8 @@
       };
 
       recognition.onresult = (event) => {
-        // Discard microphone input while Hero is speaking or while previous turn is still processing
-        if (isHeroSpeaking || isTurnInFlight) return;
+        // Discard microphone input while Hero is speaking, turn in flight, or ceremony is over
+        if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -705,11 +706,13 @@
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
         }
 
-        // Fast silence debounce (450ms): sends speech turn promptly once speaker pauses
+        // Silence debounce (1800ms): wait for full sentence before sending
+        // 450ms was too short — Chrome fires interim results mid-sentence and
+        // the debounce would fire before the user finished their thought.
         if (accumulatedTranscript.length > 0 || currentText.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
-            if (isHeroSpeaking || isTurnInFlight) return;
+            if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
             const textToSend = (accumulatedTranscript || currentText).trim();
             if (textToSend.length > 0) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
@@ -718,7 +721,7 @@
               sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 450);
+          }, 1800);
         }
       };
 
@@ -781,6 +784,7 @@
       }
       
       // Reset manifestation board UI
+      isCeremonyFinished = false;
       document.getElementById("boardCharacterName").innerText = "The Sovereign Creator";
       document.getElementById("boardMovieScene").innerText = '"Picture your 2027 like a scene in a film..."';
       document.getElementById("boardPride2026").innerText = "Awaiting your reflection...";
@@ -866,6 +870,10 @@
     }
 
     async function sendTurn(userMessage, wasInterrupted, durationSec = 0.0) {
+      if (isCeremonyFinished && userMessage) {
+        console.log("Ceremony is finished, ignoring late turn:", userMessage);
+        return;
+      }
       if (isTurnInFlight && !wasInterrupted) {
         console.warn("Turn already in flight, skipping duplicate dispatch.");
         return;
@@ -938,6 +946,8 @@
         });
 
         if (data.is_finished) {
+          isCeremonyFinished = true;
+          stopRecognitionSafe();
           setTimeout(() => endCall(), 6500);
         }
 
