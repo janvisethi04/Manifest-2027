@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hero Voice Agent — Manifest 2027 Tester</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600&family=Caveat:wght@600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            dream: {
+              ivory: "#FFFDF9",
+              blush: "#FBE6ED",
+              lavender: "#EBE6FA",
+              peach: "#FDEAE2",
+              plum: "#362544",
+              gold: "#CCA456",
+            }
+          },
+          fontFamily: {
+            serif: ["'Cormorant Garamond'", "serif"],
+            sans: ["'Plus Jakarta Sans'", "sans-serif"],
+            script: ["'Caveat'", "cursive"],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 20%, #FBE6ED 0%, #EBE6FA 50%, #FFFDF9 100%);
+      min-height: 100vh;
+    }
+    .orb-glow {
+      box-shadow: 0 0 60px 20px rgba(213, 203, 245, 0.7);
+    }
+    .orb-pulse {
+      animation: pulse 3s infinite ease-in-out;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="text-dream-plum font-sans flex flex-col items-center justify-center p-4">
+
+  <!-- Header -->
+  <div class="text-center max-w-xl mb-6">
+    <div class="inline-block px-3 py-1 rounded-full bg-white/70 border border-dream-lavender text-xs uppercase tracking-widest font-semibold text-dream-plum mb-2">
+      ElevenLabs Conversational AI
+    </div>
+    <h1 class="font-serif text-4xl sm:text-5xl font-bold tracking-tight">
+      Hero Voice Companion
+    </h1>
+    <p class="text-xs sm:text-sm text-dream-plum/70 mt-1">
+      Manifest 2027 • 7-Stage Ceremonial Voice Dialogue (Up to 9 Minutes)
+    </p>
+  </div>
+
+  <!-- Main Card -->
+  <div class="w-full max-w-lg bg-white/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-2xl border border-white/80 flex flex-col items-center">
+    
+    <!-- Config Input (If not prefilled) -->
+    <div id="config-panel" class="w-full space-y-3 mb-6">
+      <div>
+        <label class="block text-xs font-semibold uppercase tracking-wider text-dream-plum/70 mb-1">
+          ElevenLabs Agent ID
+        </label>
+        <input id="agent-id" type="text" value="agent_1401m86ep0mnewcs2x1wth46mmy9" placeholder="e.g. agent_abc123xyz" class="w-full px-3 py-2 rounded-xl border border-dream-lavender bg-dream-ivory text-sm focus:outline-none focus:ring-2 focus:ring-dream-lavender text-dream-plum font-mono" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-dream-plum/70 mb-1">
+            Your Name
+          </label>
+          <input id="user-name" type="text" value="Janvi" class="w-full px-3 py-2 rounded-xl border border-dream-lavender bg-dream-ivory text-sm focus:outline-none focus:ring-2 focus:ring-dream-lavender text-dream-plum" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-dream-plum/70 mb-1">
+            Language
+          </label>
+          <input id="user-lang" type="text" value="English / Hinglish" class="w-full px-3 py-2 rounded-xl border border-dream-lavender bg-dream-ivory text-sm focus:outline-none focus:ring-2 focus:ring-dream-lavender text-dream-plum" />
+        </div>
+      </div>
+    </div>
+
+    <!-- The Glowing Hero Orb -->
+    <div class="relative w-48 h-48 flex items-center justify-center my-4">
+      <div id="orb-halo" class="absolute inset-0 rounded-full bg-gradient-to-tr from-dream-blush via-dream-lavender to-dream-peach blur-2xl opacity-60 transition-all duration-700"></div>
+      <div id="orb-core" class="relative w-36 h-36 rounded-full bg-gradient-to-tr from-white via-dream-lavender to-dream-blush border-2 border-white/80 flex flex-col items-center justify-center orb-glow orb-pulse transition-all duration-500">
+        <svg class="w-8 h-8 text-dream-plum mb-1" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5L12 0Z" />
+        </svg>
+        <span class="font-serif text-xl font-bold leading-none">Hero</span>
+        <span id="call-status" class="text-[10px] tracking-widest uppercase text-dream-plum/60 mt-1 font-semibold">Ready</span>
+      </div>
+    </div>
+
+    <!-- Call Timer -->
+    <div id="timer-display" class="hidden text-xs font-mono font-bold text-dream-plum/70 bg-dream-lavender/50 px-3 py-1 rounded-full mb-4">
+      00:00 / 09:00
+    </div>
+
+    <!-- Controls -->
+    <div class="w-full flex items-center justify-center gap-3 mt-2">
+      <button id="btn-start" onclick="startCall()" class="w-full py-3 px-6 rounded-full bg-dream-plum text-white font-medium text-sm hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
+        </svg>
+        <span>Connect with Hero</span>
+      </button>
+
+      <button id="btn-end" onclick="endCall()" class="hidden w-full py-3 px-6 rounded-full bg-rose-600 text-white font-medium text-sm hover:bg-rose-700 transition-all shadow-lg flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
+        </svg>
+        <span>End Ceremony</span>
+      </button>
+    </div>
+
+    <!-- Live Transcript / Status Log -->
+    <div id="live-log" class="w-full mt-6 p-4 rounded-2xl bg-dream-ivory border border-dream-lavender/60 text-xs text-dream-plum/80 max-h-36 overflow-y-auto font-mono">
+      Hero Agent standing by. Enter Agent ID and click "Connect with Hero" to start.
+    </div>
+
+  </div>
+
+  <!-- 7-Stage Reference Card -->
+  <div class="max-w-lg w-full mt-6 bg-white/50 backdrop-blur-sm rounded-2xl p-4 border border-dream-lavender/40 text-xs text-dream-plum/70 space-y-1">
+    <p class="font-bold text-dream-plum uppercase tracking-wider text-[11px] mb-1">
+      Hero's 7-Stage Ceremonial Flow
+    </p>
+    <div class="grid grid-cols-2 gap-1 text-[11px]">
+      <div>1. Open (Ritual & dream out loud)</div>
+      <div>2. Pride (2026 savouring)</div>
+      <div>3. 2027 Pride (Audacity gap)</div>
+      <div>4. Character as Scene (Movie)</div>
+      <div>5. Grounding (Real past feat)</div>
+      <div>6. Mirror (Pause & reflect)</div>
+      <div class="col-span-2 text-dream-plum font-semibold">
+        7. Close ("Consider your manifestation ready. We'll come back to you within 15 days with a surprise.")
+      </div>
+    </div>
+  </div>
+
+  <!-- ElevenLabs Conversational AI Web SDK Integration -->
+  <script type="module">
+    import { Conversation } from 'https://cdn.jsdelivr.net/npm/@elevenlabs/client/+esm';
+
+    let conversation = null;
+    let timerInterval = null;
+    let callSeconds = 0;
+
+    const logBox = document.getElementById("live-log");
+    const statusText = document.getElementById("call-status");
+    const orbHalo = document.getElementById("orb-halo");
+    const btnStart = document.getElementById("btn-start");
+    const btnEnd = document.getElementById("btn-end");
+    const timerDisplay = document.getElementById("timer-display");
+
+    function log(msg) {
+      logBox.innerHTML += `<div>• ${msg}</div>`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    window.startCall = async function() {
+      const agentId = document.getElementById("agent-id").value.trim();
+      const userName = document.getElementById("user-name").value.trim() || "Friend";
+      const userLang = document.getElementById("user-lang").value.trim() || "English";
+
+      if (!agentId) {
+        alert("Please enter your ElevenLabs Agent ID first! You can get it from your ElevenLabs Dashboard or by running 'python setup_agent.py'.");
+        return;
+      }
+
+      try {
+        log("Requesting microphone permission...");
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        btnStart.classList.add("hidden");
+        btnEnd.classList.remove("hidden");
+        timerDisplay.classList.remove("hidden");
+        statusText.innerText = "Connecting...";
+
+        conversation = await Conversation.startSession({
+          agentId: agentId,
+          branchId: "agtbrch_9401m86ep1neeht9cmn6rm33xj19",
+          dynamicVariables: {
+            user_name: userName,
+            preferred_language: userLang,
+            pre_call_context: "User ready for 2027 manifestation reflection."
+          },
+          onConnect: () => {
+            statusText.innerText = "Speaking";
+            orbHalo.classList.add("scale-125", "opacity-90");
+            log("Connected to Hero. Ceremony started.");
+            startTimer();
+          },
+          onDisconnect: () => {
+            handleCallEnd("Call finished.");
+          },
+          onError: (error) => {
+            log(`Error: ${error.message || error}`);
+            handleCallEnd("Connection issue");
+          },
+          onModeChange: ({ mode }) => {
+            statusText.innerText = mode === "speaking" ? "Hero Speaking" : "Hero Listening";
+            if (mode === "speaking") {
+              orbHalo.classList.add("scale-125", "opacity-90");
+            } else {
+              orbHalo.classList.remove("scale-125", "opacity-90");
+            }
+          }
+        });
+
+      } catch (err) {
+        log(`Failed to start: ${err.message}`);
+        handleCallEnd("Microphone or API error");
+      }
+    };
+
+    window.endCall = async function() {
+      if (conversation) {
+        await conversation.endSession();
+      }
+      handleCallEnd("Call ended by user");
+    };
+
+    function startTimer() {
+      callSeconds = 0;
+      timerInterval = setInterval(() => {
+        callSeconds++;
+        const mins = String(Math.floor(callSeconds / 60)).padStart(2, "0");
+        const secs = String(callSeconds % 60).padStart(2, "0");
+        timerDisplay.innerText = `${mins}:${secs} / 09:00`;
+        if (callSeconds >= 540) {
+          endCall();
+        }
+      }, 1000);
+    }
+
+    function handleCallEnd(reason) {
+      clearInterval(timerInterval);
+      statusText.innerText = "Ready";
+      orbHalo.classList.remove("scale-125", "opacity-90");
+      btnStart.classList.remove("hidden");
+      btnEnd.classList.add("hidden");
+      log(reason);
+    }
+  </script>
+</body>
+</html>
