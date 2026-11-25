@@ -36,7 +36,7 @@ STAGE_NAMES = {
 }
 
 STAGE_GOALS = {
-    1: "Warmly open with a light ritual: 'A few minutes to dream out loud about your 2027.' Ask what's one thing from 2026 they're proud of.",
+    1: "Warmly open with a light ritual: 'A few minutes to dream out loud about your 2027.' Ask who you are speaking with. Once they give their name, welcome them by name and ask for 2026 pride.",
     2: "PRIDE 2026: Savor one real feat, choice, or endurance from 2026. If they say 'nothing' or had a hard year, meet them with deep empathy and uncover even one quiet win. Do not advance until they share something real.",
     3: "THE 2027 PRIDE: What do they want to be audaciously proud of in 2027? Nudge them to picture the version of them who won it. Do not advance until they name their 2027 vision.",
     4: "THE CHARACTER AS A SCENE: Picture 2027 like a movie. What scene do they love most? Name the character together. Do not advance until the scene and character archetype are clear.",
@@ -73,13 +73,14 @@ Do not coach, plan or solve.
 class HeroBrain:
     def __init__(self, context: Optional[Dict[str, Any]] = None):
         self.context = context or {}
-        self.user_name = self.context.get("user_name", "Janvi")
+        self.user_name = self.context.get("user_name", "").strip()
         self.current_stage = 1
         self.history: List[Dict[str, str]] = []
         self.is_finished = False
 
         # Live Captured Manifestation Board Data
         self.manifestation_data = {
+            "user_name": self.user_name,
             "pride_2026": self.context.get("pride2026", ""),
             "pride_2027": self.context.get("pride2027", ""),
             "character_name": self.context.get("characterNameIdea", ""),
@@ -98,7 +99,9 @@ class HeroBrain:
         self.current_stage = 1
         self.history = []
         self.is_finished = False
+        self.user_name = self.context.get("user_name", "").strip()
         self.manifestation_data = {
+            "user_name": self.user_name,
             "pride_2026": "",
             "pride_2027": "",
             "character_name": "",
@@ -110,6 +113,19 @@ class HeroBrain:
         self.emotion_engine = EmotionEngine()
         self.prosody_engine = ProsodyEngine()
         self.arc_engine = EmotionalArcEngine()
+
+    @staticmethod
+    def _extract_name(text: str) -> str:
+        """Extract a clean human name from speech/text input."""
+        cleaned = text.strip().rstrip(".!?,")
+        match = re.search(r"(?:my name is|i am|i'm|this is|call me|myself)\s+([A-Za-z\s]+)", cleaned, re.IGNORECASE)
+        if match:
+            candidate = match.group(1).strip()
+        else:
+            words = [w for w in cleaned.split() if w.lower() not in ["hi", "hello", "hey", "yes", "yeah", "here", "it's", "its"]]
+            candidate = " ".join(words) if words else cleaned
+        candidate = re.sub(r"[^A-Za-z\s\-]", "", candidate).strip()
+        return candidate.title() if candidate else "friend"
 
     def _parse_claude_response(self, raw_text: str) -> Tuple[str, bool, Optional[str], Optional[str]]:
         """Parse structured response from Claude or fallback to raw text."""
@@ -238,11 +254,26 @@ CAPTURED_VALUE: <extracted value or NONE>
             hesitation_bridge = "We felt that quiet hesitation... Take an easy breath. "
 
         if self.current_stage == 1:
-            return (
-                f"{prefix}Welcome, {self.user_name}. A few minutes to dream out loud about your 2027. "
-                "Tell us, what is the one thing from 2026 you're really proud of?",
-                True
-            )
+            if not self.user_name and user_msg:
+                self.user_name = self._extract_name(user_msg)
+                self.manifestation_data["user_name"] = self.user_name
+                return (
+                    f"{prefix}Wonderful to have you with us, {self.user_name}. Let's dive in: "
+                    "looking back at 2026, what's one thing from that year you're really proud of, big or quiet?",
+                    True
+                )
+            elif not self.user_name:
+                return (
+                    f"{prefix}Welcome. A few minutes to dream out loud about your 2027. "
+                    "Before we begin, who are we speaking with today?",
+                    False
+                )
+            else:
+                return (
+                    f"{prefix}Welcome, {self.user_name}. A few minutes to dream out loud about your 2027. "
+                    "Tell us, what is the one thing from 2026 you're really proud of?",
+                    True
+                )
 
         elif self.current_stage == 2:
             if is_greeting:
@@ -338,13 +369,29 @@ CAPTURED_VALUE: <extracted value or NONE>
         hero_response = ""
         should_advance = False
 
-        # Stage 1 is the ceremonial opening
+        # Stage 1 is the ceremonial opening (Ask Name if not provided)
         if self.current_stage == 1:
-            hero_response = (
-                f"Welcome, {self.user_name}. A few minutes to dream out loud about your 2027. "
-                "Tell us, what is the one thing from 2026 you're really proud of?"
-            )
-            self.current_stage = 2
+            if not self.user_name and not user_msg_clean:
+                hero_response = (
+                    "Welcome. A few minutes to dream out loud about your 2027. "
+                    "Before we begin, who are we speaking with today?"
+                )
+                self.current_stage = 1
+            elif not self.user_name and user_msg_clean:
+                self.user_name = self._extract_name(user_msg_clean)
+                self.manifestation_data["user_name"] = self.user_name
+                hero_response = (
+                    f"Wonderful to have you with us, {self.user_name}. Let's dive in: "
+                    "looking back at 2026, what's one thing from that year you're really proud of, big or quiet?"
+                )
+                self.current_stage = 2
+            else:
+                name_greeting = f", {self.user_name}" if self.user_name else ""
+                hero_response = (
+                    f"Welcome{name_greeting}. A few minutes to dream out loud about your 2027. "
+                    "Tell us, what is the one thing from 2026 you're really proud of?"
+                )
+                self.current_stage = 2
         
         # Stage 7 is the exact close
         elif self.current_stage >= 7:
@@ -362,6 +409,8 @@ CAPTURED_VALUE: <extracted value or NONE>
                 should_advance = adv
                 if field and val:
                     self.manifestation_data[field] = val
+                    if field == "user_name":
+                        self.user_name = val
             else:
                 # Intelligent Fallback
                 hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
