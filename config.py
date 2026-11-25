@@ -25,3 +25,9 @@ CHANNELS = 1
 CEREMONIAL_CLOSE_STATEMENT = (
     "Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise."
 )
+
+# VPS Claude Code Bridge Configuration
+USE_VPS_CLAUDE = False                          # Set True to use VPS Claude Code
+VPS_CLAUDE_URL = "http://127.0.0.1:5001/chat"   # Tunnels via SSH (or VPS Public IP)
+VPS_CLAUDE_TOKEN = ""                           # Read from bridge_token.txt
+

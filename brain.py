@@ -8,8 +8,10 @@ Orchestrates:
 - Stage 6 Emotional Transformation Mirror Climax
 - Exact Ceremonial Close
 """
+import json
+import urllib.request
 from typing import Dict, List, Any, Optional
-from config import CEREMONIAL_CLOSE_STATEMENT
+from config import CEREMONIAL_CLOSE_STATEMENT, USE_VPS_CLAUDE, VPS_CLAUDE_URL, VPS_CLAUDE_TOKEN
 from emotion_engine import EmotionEngine, EMOTION_BRIDGES
 from prosody_engine import ProsodyEngine
 from emotional_arc import EmotionalArcEngine
@@ -44,6 +46,36 @@ class HeroBrain:
         self.emotion_engine = EmotionEngine()
         self.prosody_engine = ProsodyEngine()
         self.arc_engine = EmotionalArcEngine()
+
+    def call_vps_claude(self, user_msg: str, emotion_label: str, stage_name: str) -> Optional[str]:
+        """Query VPS-hosted Claude Code for deep, reflective ceremonial response."""
+        if not USE_VPS_CLAUDE or not VPS_CLAUDE_TOKEN:
+            return None
+
+        prompt = (
+            f"You are Hero, the sacred Manifest 2027 companion. You speak as 'we', a warm mirror of the user's potential. "
+            f"User Name: {self.user_name}. Current Ceremonial Stage: {stage_name}. "
+            f"Detected User Emotion: {emotion_label}. "
+            f"User said: '{user_msg}'. "
+            f"Provide a short, 1-2 sentence spoken ceremonial response guiding them to the next reflection. Do not give advice or lecture."
+        )
+
+        try:
+            req = urllib.request.Request(
+                VPS_CLAUDE_URL,
+                data=json.dumps({"prompt": prompt}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {VPS_CLAUDE_TOKEN}"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply = data.get("reply", "").strip()
+                return reply if reply else None
+        except Exception as e:
+            print(f"[VPS Claude Fallback Triggered] {e}")
+            return None
 
     def process_turn(
         self, 
@@ -90,6 +122,11 @@ class HeroBrain:
             w in user_msg_lower for w in ["yes", "no", "ready", "okay", "sure"]
         )
 
+        # 7. Check VPS Claude Code if enabled
+        vps_reply = None
+        if user_msg_clean and self.current_stage not in [1, 7]:
+            vps_reply = self.call_vps_claude(user_msg_clean, emotion_meta["label"], STAGE_NAMES.get(self.current_stage, "UNKNOWN"))
+
         hero_response = ""
         next_stage = self.current_stage
 
@@ -103,8 +140,10 @@ class HeroBrain:
             next_stage = 2
 
         elif self.current_stage == 2:
-            # Stage 2: PRIDE 2026 (Savouring & Emotional Baseline)
-            if not user_msg_clean and self.context.get("pride2026"):
+            next_stage = 3
+            if vps_reply:
+                hero_response = f"{prefix}{vps_reply}"
+            elif not user_msg_clean and self.context.get("pride2026"):
                 hero_response = (
                     f"{prefix}Looking at what you noted about 2026—\"{self.context['pride2026']}\"—"
                     "let yourself really feel that feat. What did that experience reveal about the strength already inside you?"
@@ -120,11 +159,12 @@ class HeroBrain:
                     "Now, let's step across the threshold into 2027. "
                     "What do you want to be deeply, audaciously proud of in 2027?"
                 )
-                next_stage = 3
 
         elif self.current_stage == 3:
-            # Stage 3: THE 2027 PRIDE (Audacity gap & Morning visualization)
-            if is_brief:
+            next_stage = 4
+            if vps_reply:
+                hero_response = f"{prefix}{vps_reply}"
+            elif is_brief:
                 hero_response = (
                     f"{prefix}{hesitation_bridge}{emotion_bridge}Don't hold back on the audacity. "
                     "If nothing held you back, what does that 2027 freedom feel like?"
@@ -134,7 +174,6 @@ class HeroBrain:
                     f"{prefix}{hesitation_bridge}{emotion_bridge}And the version of you who has already stepped into that victory... "
                     "what does their morning look like? What are they doing with their hands when the sun comes up?"
                 )
-                next_stage = 4
 
         elif self.current_stage == 4:
             # Stage 4: THE CHARACTER AS A SCENE (Movie Scene & Naming)
