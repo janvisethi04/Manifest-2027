@@ -599,6 +599,8 @@
     };
 
     let isRecognitionRunning = false;
+    let isRecognitionStarting = false;
+    let restartTimer = null;
 
     function handleOrbClick() {
       if (!isCallActive) {
@@ -610,28 +612,28 @@
     }
 
     function startRecognitionSafe() {
-      if (!isCallActive || isMuted || isRecognitionRunning) return;
+      if (!isCallActive || isMuted || isHeroSpeaking) return;
+      if (isRecognitionRunning || isRecognitionStarting) return;
+      if (!recognition) initSpeechRecognition();
+      if (!recognition) return;
+
+      isRecognitionStarting = true;
       try {
-        if (!recognition) {
-          initSpeechRecognition();
-        }
         recognition.start();
-        isRecognitionRunning = true;
-      } catch (e) {
-        // Recreate clean SpeechRecognition instance if Chrome refused to restart previous
-        try {
-          initSpeechRecognition();
-          if (recognition) {
-            recognition.start();
-            isRecognitionRunning = true;
-          }
-        } catch (err) {
-          console.warn("Recognition start retry notice:", err);
+      } catch (err) {
+        isRecognitionStarting = false;
+        if (err.name !== 'InvalidStateError') {
+          console.warn("Recognition start note:", err.message);
         }
       }
     }
 
     function stopRecognitionSafe() {
+      if (restartTimer) {
+        clearTimeout(restartTimer);
+        restartTimer = null;
+      }
+      isRecognitionStarting = false;
       if (!recognition) return;
       try {
         recognition.stop();
@@ -648,11 +650,7 @@
       }
 
       if (recognition) {
-        try { 
-          recognition.onend = null;
-          recognition.onerror = null;
-          recognition.abort(); 
-        } catch(e) {}
+        return; // Single persistent instance
       }
 
       recognition = new SpeechRecognition();
@@ -662,6 +660,7 @@
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
+        isRecognitionStarting = false;
         isRecognitionRunning = true;
         if (!isHeroSpeaking) {
           setCoreState("core-listening");
@@ -705,7 +704,7 @@
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
         }
 
-        // Fast silence debounce (600ms): sends speech turn promptly once speaker pauses
+        // Fast silence debounce (650ms): sends speech turn promptly once speaker pauses
         if (accumulatedTranscript.length > 0 || currentText.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
@@ -717,32 +716,33 @@
               sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 600);
+          }, 650);
         }
       };
 
       recognition.onerror = (event) => {
+        isRecognitionStarting = false;
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+          // Normal background events, don't flood console or loop
+          return;
+        }
         console.warn("Speech recognition event:", event.error);
-        isRecognitionRunning = false;
         if (event.error === 'not-allowed') {
           updateStatus("Microphone access blocked. Click lock icon in address bar to allow.", "rose");
+          isCallActive = false;
           return;
-        }
-        if (event.error === 'no-speech') {
-          // Normal silence, keep listening
-          return;
-        }
-        // Auto-rearm on network or audio-capture errors
-        if (isCallActive && !isMuted) {
-          setTimeout(startRecognitionSafe, 300);
         }
       };
 
       recognition.onend = () => {
         isRecognitionRunning = false;
-        // Keep microphone permanently active during call
-        if (isCallActive && !isMuted) {
-          setTimeout(startRecognitionSafe, 150);
+        isRecognitionStarting = false;
+        // Keep microphone permanently active during call, unless Hero is speaking
+        if (isCallActive && !isMuted && !isHeroSpeaking) {
+          if (restartTimer) clearTimeout(restartTimer);
+          restartTimer = setTimeout(() => {
+            startRecognitionSafe();
+          }, 250);
         }
       };
     }
@@ -785,17 +785,6 @@
       document.getElementById("boardPride2027").innerText = "Awaiting your audacity...";
       document.getElementById("boardGroundingProof").innerText = '"So this is someone you already are. Evidence from your own life that this character is already in you."';
       updateStageUI(1);
-
-      // 2. Request mic permission cleanly, then release hardware lock so SpeechRecognition has exclusive capture
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach(t => t.stop());
-        }
-      } catch (err) {
-        console.warn("Microphone access prompt error:", err);
-        updateStatus("Microphone access needed. Please allow in browser address bar.", "rose");
-      }
 
       isCallActive = true;
       const btn = document.getElementById("callButton");
@@ -1021,6 +1010,7 @@
     async function playSpeech(text) {
       stopAudio();
       isHeroSpeaking = true;
+      stopRecognitionSafe();
       setCoreState("core-speaking");
       updateStatus("Hero is speaking...", "purple");
 
