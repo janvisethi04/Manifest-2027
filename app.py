@@ -14,7 +14,7 @@ import webbrowser
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 import edge_tts
@@ -77,9 +77,11 @@ async def process_chat_turn(req: ChatRequest):
         "stage_name": turn_result["stage_name"],
         "is_finished": turn_result["is_finished"],
         "was_interrupted": turn_result["was_interrupted"],
+        "user_name": turn_result.get("manifestation_board", {}).get("user_name") or brain.user_name,
         "emotion": turn_result.get("emotion", {}),
         "prosody": turn_result.get("prosody", {}),
-        "trajectory": turn_result.get("trajectory", [])
+        "trajectory": turn_result.get("trajectory", []),
+        "manifestation_board": turn_result.get("manifestation_board", {})
     })
 
 @app.get("/api/tts")
@@ -89,7 +91,7 @@ async def generate_tts(
     rate: Optional[str] = "+0%",
     pitch: Optional[str] = "+0Hz"
 ):
-    """Synthesize text with emotional modulation (rate, pitch) into studio-quality MP3."""
+    """Synthesize text with emotional modulation (rate, pitch) streaming MP3 chunks directly for ultra-low latency."""
     if not text or not text.strip():
         return JSONResponse({"error": "Empty text"}, status_code=400)
     
@@ -97,26 +99,31 @@ async def generate_tts(
     rate_val = rate or "+0%"
     pitch_val = pitch or "+0Hz"
     
-    temp_fd, temp_path = tempfile.mkstemp(suffix=".mp3", prefix="agent_tts_")
-    os.close(temp_fd)
-    
-    try:
-        communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
-        await communicate.save(temp_path)
-        return FileResponse(
-            temp_path,
-            media_type="audio/mpeg",
-            headers={"Cache-Control": "no-cache"}
-        )
-    except Exception as e:
-        print(f"[TTS Error] {e}")
-        # Fallback to standard generation
+    async def audio_stream():
         try:
-            fallback = edge_tts.Communicate(text, voice_name)
-            await fallback.save(temp_path)
-            return FileResponse(temp_path, media_type="audio/mpeg")
-        except Exception as e2:
-            return JSONResponse({"error": str(e2)}, status_code=500)
+            communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        except Exception as e:
+            print(f"[TTS Stream Error] {e}")
+            # Fallback to unmodulated stream if error occurred
+            try:
+                fallback = edge_tts.Communicate(text, voice_name)
+                async for chunk in fallback.stream():
+                    if chunk["type"] == "audio":
+                        yield chunk["data"]
+            except Exception as e2:
+                print(f"[TTS Fallback Error] {e2}")
+
+    return StreamingResponse(
+        audio_stream(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache",
+            "Content-Disposition": "inline; filename=speech.mp3"
+        }
+    )
 
 def run_app(port: int = 8000, open_browser: bool = False):
     print("=" * 65)

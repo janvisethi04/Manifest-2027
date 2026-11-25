@@ -156,10 +156,10 @@ class HeroBrain:
     def call_vps_claude(
         self, 
         user_msg: str, 
-        emotion_label: str, 
+        emotion_meta: Dict[str, Any], 
         prosody_info: Dict[str, Any]
     ) -> Optional[Tuple[str, bool, Optional[str], Optional[str]]]:
-        """Query VPS Claude with Full Multi-Turn History & Goal-Gating."""
+        """Query VPS Claude with Full Multi-Turn History, Emotion/Sentiment Context & Goal-Gating."""
         if not USE_VPS_CLAUDE or not VPS_CLAUDE_TOKEN:
             return None
 
@@ -170,10 +170,17 @@ class HeroBrain:
             history_lines.append(f"{speaker}: {turn['text']}")
         history_str = "\n".join(history_lines) if history_lines else "(Beginning of ceremony)"
 
+        polarity = emotion_meta.get("polarity", 0.0)
+        sentiment_label = "Neutral & Centered"
+        if polarity > 0.2:
+            sentiment_label = "Expansive & Uplifting"
+        elif polarity < -0.2:
+            sentiment_label = "Heavy, Tender or Depleted"
+
         prompt = f"""{MASTER_SYSTEM_PROMPT}
 
 CURRENT CEREMONIAL CONTEXT:
-- User's Name: {self.user_name}
+- User's Name: {self.user_name or '(Asking for name in opening)'}
 - Current Stage: Stage {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')})
 - Stage Goal: {STAGE_GOALS.get(self.current_stage, '')}
 - Live Manifestation Board Status:
@@ -183,19 +190,24 @@ CURRENT CEREMONIAL CONTEXT:
   * Movie Scene: {self.manifestation_data.get('movie_scene') or '(Not yet pictured)'}
   * Grounding Proof: {self.manifestation_data.get('grounding_story') or '(Not yet surfaced)'}
 
+DEEP EMOTIONAL & SENTIMENT TELEMETRY:
+- Detected Emotion Spectrum: {emotion_meta.get('label', 'Reflective')}
+- Sentiment Polarity: {polarity:+.2f} ({sentiment_label})
+- Psychological Guidance Cue: {emotion_meta.get('guidance_cue', 'Mirror their truth with quiet presence.')}
+- Vocal Prosody: {prosody_info.get('wpm', 130)} WPM ({prosody_info.get('pace_label', 'centered')}), Tension/Disfluency: {prosody_info.get('tension_state', 'centered')}
+
 RECENT CONVERSATION HISTORY:
 {history_str}
 
 USER JUST SAID:
 "{user_msg}"
-(Detected Emotion: {emotion_label}, Speech Pace: {prosody_info.get('wpm', 130)} WPM, Hesitation: {prosody_info.get('tension_state', 'centered')})
 
 CRITICAL CONVERSATIONAL RULES:
-1. Speak as Hero in 1-2 spoken sentences only. Natural, warm, human.
-2. Mirror their exact words and feelings without judging or lecturing.
+1. Speak as Hero in 1-2 spoken sentences only. Highly conversational, warm, human. Not scripted, not like a survey.
+2. If the user speaks Hindi, Hinglish, or casual Indian phrases (e.g. 'kuch nahi', 'bahut thak gaye', 'roller coaster tha', 'haan'), match their warmth naturally with grounded bilingual comfort.
 3. If the user gave a greeting ('hi', 'hey'), an evasive answer ('nothing', 'idk', 'not sure'), or shared difficulty/pain ('roller coaster', 'bad year'):
    - Set ADVANCE_STAGE: NO.
-   - Meet their emotion with compassionate presence and gently follow up to uncover their answer.
+   - Do NOT give robotic scripted advice or poetic clichés. Validate their reality with genuine human warmth and gently invite them to share one small moment.
 4. Only if the user actually answered the stage requirement:
    - Set ADVANCE_STAGE: YES.
    - Extract the CAPTURED_FIELD and CAPTURED_VALUE.
@@ -204,7 +216,7 @@ CRITICAL CONVERSATIONAL RULES:
 YOUR EXACT OUTPUT FORMAT:
 REPLY: <your 1-2 spoken sentences to user>
 ADVANCE_STAGE: <YES or NO>
-CAPTURED_FIELD: <pride_2026 | pride_2027 | character_name | movie_scene | grounding_story | NONE>
+CAPTURED_FIELD: <user_name | pride_2026 | pride_2027 | character_name | movie_scene | grounding_story | NONE>
 CAPTURED_VALUE: <extracted value or NONE>
 """
 
@@ -221,7 +233,7 @@ CAPTURED_VALUE: <extracted value or NONE>
                     "Authorization": f"Bearer {VPS_CLAUDE_TOKEN}"
                 }
             )
-            with urllib.request.urlopen(req, context=ctx, timeout=14.0) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=12.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 reply_text = data.get("reply", "").strip()
                 if reply_text:
@@ -401,7 +413,7 @@ CAPTURED_VALUE: <extracted value or NONE>
 
         else:
             # Query VPS Claude Code
-            claude_result = self.call_vps_claude(user_msg_clean, emotion_meta["label"], prosody_meta)
+            claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
 
             if claude_result:
                 reply, adv, field, val = claude_result

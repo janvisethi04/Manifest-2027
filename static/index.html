@@ -575,6 +575,8 @@
     let currentVoiceRate = "+0%";
     let currentVoicePitch = "+0Hz";
     let utteranceStartTime = 0;
+    let speechDebounceTimer = null;
+    let accumulatedTranscript = "";
 
     const stageNames = {
       1: "1. Welcome Ritual",
@@ -597,12 +599,16 @@
 
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) return;
+      if (!SpeechRecognition) {
+        console.warn("Web Speech API is not supported on this browser.");
+        return;
+      }
 
       recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      // en-IN accurately recognizes Indian English, Hindi phonetics, and Indian names (e.g. Janvi, Rahul)
+      recognition.lang = 'en-IN';
 
       recognition.onstart = () => {
         setCoreState("core-listening");
@@ -617,20 +623,52 @@
       };
 
       recognition.onresult = (event) => {
-        let transcript = '';
+        let interimTranscript = '';
+        let finalTranscript = '';
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            transcript += event.results[i][0].transcript;
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalTranscript += item[0].transcript;
+          } else {
+            interimTranscript += item[0].transcript;
           }
         }
-        if (transcript.trim().length > 0) {
-          const wasInterrupted = isHeroSpeaking;
-          if (isHeroSpeaking) triggerBargeIn();
-          
-          const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
-          sendTurn(transcript.trim(), wasInterrupted, durationSec);
-          utteranceStartTime = Date.now();
+
+        const currentText = (accumulatedTranscript + " " + finalTranscript + " " + interimTranscript).trim();
+        
+        // Live speech preview
+        const chatInput = document.getElementById("chatInput");
+        if (chatInput && currentText) {
+          chatInput.placeholder = `Listening: "${currentText}"...`;
         }
+
+        if (finalTranscript.trim()) {
+          accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
+        }
+
+        // Fast silence debounce (600ms): sends speech turn promptly once speaker pauses
+        if (accumulatedTranscript.length > 0 || currentText.length > 0) {
+          clearTimeout(speechDebounceTimer);
+          speechDebounceTimer = setTimeout(() => {
+            const textToSend = (accumulatedTranscript || currentText).trim();
+            if (textToSend.length > 0) {
+              const wasInterrupted = isHeroSpeaking;
+              if (isHeroSpeaking) triggerBargeIn();
+
+              const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
+              accumulatedTranscript = "";
+              if (chatInput) chatInput.placeholder = "Type a thought or speak freely...";
+              sendTurn(textToSend, wasInterrupted, durationSec);
+              utteranceStartTime = Date.now();
+            }
+          }, 600);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'no-speech') return;
+        console.warn("Speech recognition warning:", event.error);
       };
 
       recognition.onend = () => {
@@ -740,6 +778,13 @@
         const data = await resp.json();
         currentStage = data.current_stage;
         updateStageUI(currentStage);
+
+        // Update User Name dynamically
+        if (data.user_name) {
+          context.user_name = data.user_name;
+          const varInput = document.getElementById("varName");
+          if (varInput) varInput.value = data.user_name;
+        }
 
         // Apply Emotion Feedback
         if (data.emotion) {
