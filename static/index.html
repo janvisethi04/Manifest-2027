@@ -675,6 +675,30 @@
         if (isHeroSpeaking) return;
         setCoreState("core-listening");
         updateStatus("Hearing your voice...", "cyan");
+        // Clear any pending fallback debounce — user is still speaking
+        clearTimeout(speechDebounceTimer);
+        speechDebounceTimer = null;
+      };
+
+      // onspeechend fires the moment the user stops speaking (mic detects silence).
+      // This is the PRIMARY trigger — much more accurate than a time-based debounce
+      // because it fires AFTER the user finishes their whole sentence, not mid-word.
+      recognition.onspeechend = () => {
+        if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+        // Small 400ms grace period to let the final onresult event arrive first
+        clearTimeout(speechDebounceTimer);
+        speechDebounceTimer = setTimeout(() => {
+          if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+          const chatInput = document.getElementById("chatInput");
+          const textToSend = accumulatedTranscript.trim();
+          if (textToSend.length > 0) {
+            const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
+            accumulatedTranscript = "";
+            if (chatInput) chatInput.placeholder = "Type a thought or speak freely...";
+            sendTurn(textToSend, false, durationSec);
+            utteranceStartTime = Date.now();
+          }
+        }, 400);
       };
 
       recognition.onresult = (event) => {
@@ -693,27 +717,27 @@
           }
         }
 
-        const currentText = (accumulatedTranscript + " " + finalTranscript + " " + interimTranscript).trim();
-        
-        // Show live real-time speech preview in input box and status label
         const chatInput = document.getElementById("chatInput");
-        if (chatInput && currentText) {
-          chatInput.placeholder = `Listening: "${currentText}"...`;
-          updateStatus(`Hearing: "${currentText.slice(0, 24)}..."`, "cyan");
-        }
 
+        // Always accumulate final results — these are locked-in words
         if (finalTranscript.trim()) {
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
         }
 
-        // Silence debounce (1800ms): wait for full sentence before sending
-        // 450ms was too short — Chrome fires interim results mid-sentence and
-        // the debounce would fire before the user finished their thought.
-        if (accumulatedTranscript.length > 0 || currentText.length > 0) {
+        // Show live preview of everything heard so far (final + interim)
+        const currentText = (accumulatedTranscript + " " + interimTranscript).trim();
+        if (chatInput && currentText) {
+          chatInput.placeholder = `Listening: "${currentText}"...`;
+          updateStatus(`Hearing: "${currentText.slice(0, 30)}..."`, "cyan");
+        }
+
+        // Fallback debounce (3500ms) — fires only if onspeechend somehow didn't trigger.
+        // Much longer than before so slow/thoughtful speakers aren't cut off.
+        if (accumulatedTranscript.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
             if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
-            const textToSend = (accumulatedTranscript || currentText).trim();
+            const textToSend = accumulatedTranscript.trim();
             if (textToSend.length > 0) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
               accumulatedTranscript = "";
@@ -721,7 +745,7 @@
               sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 1800);
+          }, 3500);
         }
       };
 
