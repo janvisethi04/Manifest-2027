@@ -577,6 +577,7 @@
     let utteranceStartTime = 0;
     let speechDebounceTimer = null;
     let accumulatedTranscript = "";
+    let isTurnInFlight = false;
     let currentSessionId = "sess_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
 
     const stageNames = {
@@ -676,8 +677,8 @@
       };
 
       recognition.onresult = (event) => {
-        // Discard microphone input while Hero is speaking to eliminate speaker-echo
-        if (isHeroSpeaking) return;
+        // Discard microphone input while Hero is speaking or while previous turn is still processing
+        if (isHeroSpeaking || isTurnInFlight) return;
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -704,19 +705,20 @@
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
         }
 
-        // Fast silence debounce (400ms): sends speech turn promptly once speaker pauses
+        // Fast silence debounce (450ms): sends speech turn promptly once speaker pauses
         if (accumulatedTranscript.length > 0 || currentText.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
+            if (isHeroSpeaking || isTurnInFlight) return;
             const textToSend = (accumulatedTranscript || currentText).trim();
-            if (textToSend.length > 0 && !isHeroSpeaking) {
+            if (textToSend.length > 0) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
               accumulatedTranscript = "";
               if (chatInput) chatInput.placeholder = "Type a thought or speak freely...";
               sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 400);
+          }, 450);
         }
       };
 
@@ -864,6 +866,17 @@
     }
 
     async function sendTurn(userMessage, wasInterrupted, durationSec = 0.0) {
+      if (isTurnInFlight && !wasInterrupted) {
+        console.warn("Turn already in flight, skipping duplicate dispatch.");
+        return;
+      }
+      isTurnInFlight = true;
+      accumulatedTranscript = "";
+      if (speechDebounceTimer) {
+        clearTimeout(speechDebounceTimer);
+        speechDebounceTimer = null;
+      }
+
       if (userMessage) {
         appendMessage("user", userMessage, wasInterrupted);
       }
@@ -929,6 +942,7 @@
       } catch (err) {
         console.error("Chat turn error:", err);
         updateStatus("Connection reconnecting...", "cyan");
+        isTurnInFlight = false;
       }
     }
 
@@ -1019,6 +1033,8 @@
 
         currentAudio.onended = () => {
           isHeroSpeaking = false;
+          isTurnInFlight = false;
+          accumulatedTranscript = "";
           if (isCallActive) {
             setCoreState("core-listening");
             updateStatus("Hero is listening... (Speak freely)", "emerald");
@@ -1033,6 +1049,7 @@
         currentAudio.onerror = (e) => {
           console.warn("Audio playback error:", e);
           isHeroSpeaking = false;
+          isTurnInFlight = false;
           setCoreState("core-listening");
           if (isCallActive) startRecognitionSafe();
         };
@@ -1041,6 +1058,7 @@
       } catch (e) {
         console.warn("Audio play error:", e);
         isHeroSpeaking = false;
+        isTurnInFlight = false;
         setCoreState("core-listening");
         if (isCallActive) startRecognitionSafe();
       }
