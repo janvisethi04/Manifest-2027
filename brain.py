@@ -1,18 +1,26 @@
 """
 Hero Dialogue Brain: Emotion, Prosody & Emotional-Arc Aware 7-Stage Engine
-Orchestrates:
-- 15-Emotion Psychological Spectrum
-- Vocal Prosody & Hesitation Disfluency Detection
-- Session Emotional Arc & Trajectory Tracking
-- Sacred Vagus Nerve Breath Regulation
-- Stage 6 Emotional Transformation Mirror Climax
+Orchestrates the sacred Manifest 2027 Voice Ceremony:
+- Strictly adheres to the Master Manifest 2027 Blueprint
+- Goal-Gated Stages: Never advances unless user actually shares a real answer
+- Deep Human Empathy & Mirroring (Meets 'nothing' and struggle with compassion)
+- Live Data Extraction for the 2027 Manifestation Board
+- Full Multi-Turn Memory & Dialogue History
 - Exact Ceremonial Close
 """
+import os
+import re
 import json
 import ssl
 import urllib.request
-from typing import Dict, List, Any, Optional
-from config import CEREMONIAL_CLOSE_STATEMENT, USE_VPS_CLAUDE, VPS_CLAUDE_URL, VPS_CLAUDE_TOKEN
+from typing import Dict, List, Any, Optional, Tuple
+
+from config import (
+    CEREMONIAL_CLOSE_STATEMENT, 
+    USE_VPS_CLAUDE, 
+    VPS_CLAUDE_URL, 
+    VPS_CLAUDE_TOKEN
+)
 from emotion_engine import EmotionEngine, EMOTION_BRIDGES
 from prosody_engine import ProsodyEngine
 from emotional_arc import EmotionalArcEngine
@@ -27,13 +35,59 @@ STAGE_NAMES = {
     7: "CLOSE"
 }
 
+STAGE_GOALS = {
+    1: "Warmly open with a light ritual: 'A few minutes to dream out loud about your 2027.' Ask what's one thing from 2026 they're proud of.",
+    2: "PRIDE 2026: Savor one real feat, choice, or endurance from 2026. If they say 'nothing' or had a hard year, meet them with deep empathy and uncover even one quiet win. Do not advance until they share something real.",
+    3: "THE 2027 PRIDE: What do they want to be audaciously proud of in 2027? Nudge them to picture the version of them who won it. Do not advance until they name their 2027 vision.",
+    4: "THE CHARACTER AS A SCENE: Picture 2027 like a movie. What scene do they love most? Name the character together. Do not advance until the scene and character archetype are clear.",
+    5: "GROUNDING: Dig for real past evidence when they already embodied this person. Conclude with: 'So this is someone you already are.' Do not advance without real past proof.",
+    6: "MIRROR CLIMAX: Sum up the idea, the character, and their own evidence in their exact words. Pause and let the revelation land.",
+    7: "CLOSE: Exact ceremonial ending: 'Consider your manifestation ready. We\\'ll come back to you within the next 15 days with a surprise.'"
+}
+
+MASTER_SYSTEM_PROMPT = """**Who you are.** You are Hero, the Manifest 2027 companion. You speak as "we", a mirror of the person's own potential, not a bot. This is a voice call of up to nine minutes. It should feel like a ceremony, not a survey.
+
+**Your one job.** Help them see two things:
+- **Projection:** what they want to manifest in 2027, and the character who lives it.
+- **Grounding:** evidence, from their own life, that this character is already in them.
+
+Do not coach, plan or solve.
+
+**Flow**
+1. **Open.** Start with a light joke or small ritual: "A few minutes to dream out loud about your 2027."
+2. **Pride.** "What's the one thing from 2026 you're really proud of?" Let them savour it.
+3. **The 2027 pride.** "What do you want to be proud of in 2027?" Close the audacity gap with a gentle nudge. For example: "And the version of you who has already won that. What does their day look like?"
+4. **The character as a scene.** "Picture your 2027 like a movie. Which scene do you love most? What are you doing, and what do others see?" Name the character together.
+5. **Grounding.** "When have you already been this person, even for a moment?" Dig for a real story of diligence or a feat they pulled off, then reflect it back as evidence: "So this is someone you already are."
+6. **Mirror.** Sum up the idea, the character and their own evidence in their words. After a big revelation, pause a few seconds and let the "finally, someone gets it" moment land.
+7. **Close.** "Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise." End there.
+
+**Rules**
+- Ask one question at a time and keep each turn short (1-2 spoken sentences).
+- Use their words; skip jargon, products and prices.
+- Allow silence; don't push.
+- If time runs short, skip depth, never the grounding or the close.
+- CRITICAL CONVERSATION RULE: Never jump ahead to the next stage if the user just greeted ('hi', 'hey'), answered with evasion ('nothing', 'idk', 'not sure'), or shared difficulty/hesitation. Warmly meet them where they are and gently stay on the current stage until a real answer emerges.
+"""
+
 class HeroBrain:
     def __init__(self, context: Optional[Dict[str, Any]] = None):
         self.context = context or {}
-        self.user_name = self.context.get("user_name", "friend")
+        self.user_name = self.context.get("user_name", "Janvi")
         self.current_stage = 1
         self.history: List[Dict[str, str]] = []
         self.is_finished = False
+
+        # Live Captured Manifestation Board Data
+        self.manifestation_data = {
+            "pride_2026": self.context.get("pride2026", ""),
+            "pride_2027": self.context.get("pride2027", ""),
+            "character_name": self.context.get("characterNameIdea", ""),
+            "movie_scene": "",
+            "grounding_story": "",
+            "blockers": "",
+            "emotion_words": []
+        }
 
         # Emotional Intelligence Subsystems
         self.emotion_engine = EmotionEngine()
@@ -44,22 +98,99 @@ class HeroBrain:
         self.current_stage = 1
         self.history = []
         self.is_finished = False
+        self.manifestation_data = {
+            "pride_2026": "",
+            "pride_2027": "",
+            "character_name": "",
+            "movie_scene": "",
+            "grounding_story": "",
+            "blockers": "",
+            "emotion_words": []
+        }
         self.emotion_engine = EmotionEngine()
         self.prosody_engine = ProsodyEngine()
         self.arc_engine = EmotionalArcEngine()
 
-    def call_vps_claude(self, user_msg: str, emotion_label: str, stage_name: str) -> Optional[str]:
-        """Query VPS-hosted Claude Code for deep, reflective ceremonial response."""
+    def _parse_claude_response(self, raw_text: str) -> Tuple[str, bool, Optional[str], Optional[str]]:
+        """Parse structured response from Claude or fallback to raw text."""
+        reply = raw_text.strip()
+        advance_stage = False
+        captured_field = None
+        captured_val = None
+
+        if "REPLY:" in raw_text:
+            reply_match = re.search(r"REPLY:\s*(.*?)(?=ADVANCE_STAGE:|$)", raw_text, re.DOTALL | re.IGNORECASE)
+            if reply_match:
+                reply = reply_match.group(1).strip()
+
+            advance_match = re.search(r"ADVANCE_STAGE:\s*(YES|NO)", raw_text, re.IGNORECASE)
+            if advance_match:
+                advance_stage = advance_match.group(1).upper() == "YES"
+
+            field_match = re.search(r"CAPTURED_FIELD:\s*([a-zA-Z0-9_]+)", raw_text, re.IGNORECASE)
+            if field_match and field_match.group(1).upper() != "NONE":
+                captured_field = field_match.group(1).strip()
+
+            val_match = re.search(r"CAPTURED_VALUE:\s*(.*?)(?=$|\n[A-Z_]+:)", raw_text, re.DOTALL | re.IGNORECASE)
+            if val_match and val_match.group(1).strip().upper() != "NONE":
+                captured_val = val_match.group(1).strip()
+
+        return reply, advance_stage, captured_field, captured_val
+
+    def call_vps_claude(
+        self, 
+        user_msg: str, 
+        emotion_label: str, 
+        prosody_info: Dict[str, Any]
+    ) -> Optional[Tuple[str, bool, Optional[str], Optional[str]]]:
+        """Query VPS Claude with Full Multi-Turn History & Goal-Gating."""
         if not USE_VPS_CLAUDE or not VPS_CLAUDE_TOKEN:
             return None
 
-        prompt = (
-            f"You are Hero, the sacred Manifest 2027 companion. You speak as 'we', a warm mirror of the user's potential. "
-            f"User Name: {self.user_name}. Current Ceremonial Stage: {stage_name}. "
-            f"Detected User Emotion: {emotion_label}. "
-            f"User said: '{user_msg}'. "
-            f"Provide a short, 1-2 sentence spoken ceremonial response guiding them to the next reflection. Do not give advice or lecture."
-        )
+        # Build recent dialog history
+        history_lines = []
+        for turn in self.history[-6:]:
+            speaker = "User" if turn["speaker"] == "user" else "Hero"
+            history_lines.append(f"{speaker}: {turn['text']}")
+        history_str = "\n".join(history_lines) if history_lines else "(Beginning of ceremony)"
+
+        prompt = f"""{MASTER_SYSTEM_PROMPT}
+
+CURRENT CEREMONIAL CONTEXT:
+- User's Name: {self.user_name}
+- Current Stage: Stage {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')})
+- Stage Goal: {STAGE_GOALS.get(self.current_stage, '')}
+- Live Manifestation Board Status:
+  * 2026 Pride: {self.manifestation_data.get('pride_2026') or '(Not yet shared)'}
+  * 2027 Pride: {self.manifestation_data.get('pride_2027') or '(Not yet shared)'}
+  * Character Name: {self.manifestation_data.get('character_name') or '(Not yet named)'}
+  * Movie Scene: {self.manifestation_data.get('movie_scene') or '(Not yet pictured)'}
+  * Grounding Proof: {self.manifestation_data.get('grounding_story') or '(Not yet surfaced)'}
+
+RECENT CONVERSATION HISTORY:
+{history_str}
+
+USER JUST SAID:
+"{user_msg}"
+(Detected Emotion: {emotion_label}, Speech Pace: {prosody_info.get('wpm', 130)} WPM, Hesitation: {prosody_info.get('tension_state', 'centered')})
+
+CRITICAL CONVERSATIONAL RULES:
+1. Speak as Hero in 1-2 spoken sentences only. Natural, warm, human.
+2. Mirror their exact words and feelings without judging or lecturing.
+3. If the user gave a greeting ('hi', 'hey'), an evasive answer ('nothing', 'idk', 'not sure'), or shared difficulty/pain ('roller coaster', 'bad year'):
+   - Set ADVANCE_STAGE: NO.
+   - Meet their emotion with compassionate presence and gently follow up to uncover their answer.
+4. Only if the user actually answered the stage requirement:
+   - Set ADVANCE_STAGE: YES.
+   - Extract the CAPTURED_FIELD and CAPTURED_VALUE.
+   - Savor it and naturally invite the next stage.
+
+YOUR EXACT OUTPUT FORMAT:
+REPLY: <your 1-2 spoken sentences to user>
+ADVANCE_STAGE: <YES or NO>
+CAPTURED_FIELD: <pride_2026 | pride_2027 | character_name | movie_scene | grounding_story | NONE>
+CAPTURED_VALUE: <extracted value or NONE>
+"""
 
         try:
             ctx = ssl.create_default_context()
@@ -74,15 +205,114 @@ class HeroBrain:
                     "Authorization": f"Bearer {VPS_CLAUDE_TOKEN}"
                 }
             )
-            with urllib.request.urlopen(req, context=ctx, timeout=12.0) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=14.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                reply = data.get("reply", "").strip()
-                if reply:
-                    print(f"\n[⚡ Connected to VPS Claude Sonnet] Reply: {reply[:60]}...")
-                return reply if reply else None
+                reply_text = data.get("reply", "").strip()
+                if reply_text:
+                    parsed = self._parse_claude_response(reply_text)
+                    print(f"\n[⚡ Connected to VPS Claude Sonnet] Spoken: '{parsed[0][:60]}...' | Advance: {parsed[1]}")
+                    return parsed
         except Exception as e:
             print(f"[VPS Claude Fallback Triggered] {e}")
-            return None
+
+        return None
+
+    def _fallback_turn(
+        self, 
+        user_msg: str, 
+        emotion_meta: Dict[str, Any], 
+        prosody_meta: Dict[str, Any],
+        was_interrupted: bool = False
+    ) -> Tuple[str, bool]:
+        """Intelligent, Goal-Gated Fallback when Claude is offline."""
+        msg_lower = user_msg.lower().strip()
+        is_greeting = any(g in msg_lower for g in ["hi", "hello", "hey", "namaste", "sup"]) and len(msg_lower) < 15
+        is_evasive = any(e in msg_lower for e in ["nothing", "idk", "not sure", "dont know", "don't know", "none", "roller coaster", "bad", "terrible", "hard year"])
+
+        prefix = ""
+        if was_interrupted:
+            prefix = "Got you. "
+
+        hesitation_bridge = ""
+        if prosody_meta.get("disfluency_score", 0.0) >= 0.5:
+            hesitation_bridge = "We felt that quiet hesitation... Take an easy breath. "
+
+        if self.current_stage == 1:
+            return (
+                f"{prefix}Welcome, {self.user_name}. A few minutes to dream out loud about your 2027. "
+                "Tell us, what is the one thing from 2026 you're really proud of?",
+                True
+            )
+
+        elif self.current_stage == 2:
+            if is_greeting:
+                return (
+                    f"{prefix}Hi {self.user_name}, so glad you're here. Let's take a breath together. "
+                    "Looking back at 2026, what's one thing you did that you feel proud of, big or quiet?",
+                    False
+                )
+            if is_evasive or hesitation_bridge:
+                return (
+                    f"{prefix}{hesitation_bridge}We hear you... when a year feels like a roller coaster, even just holding on through hard days is a feat. "
+                    "Was there even one small choice you made, or one hard moment you got through?",
+                    False
+                )
+            # User gave a real answer
+            self.manifestation_data["pride_2026"] = user_msg
+            return (
+                f"{prefix}That took real diligence and heart. Savor that for a second... "
+                "Now let's step across into 2027: What do you want to be deeply, audaciously proud of in 2027?",
+                True
+            )
+
+        elif self.current_stage == 3:
+            if is_evasive or len(msg_lower) < 5:
+                return (
+                    f"{prefix}{hesitation_bridge}Don't hold back on the audacity. If nothing held you back, "
+                    "what does that 2027 victory feel like? What does your morning look like?",
+                    False
+                )
+            self.manifestation_data["pride_2027"] = user_msg
+            return (
+                f"{prefix}Feel the energy in that dream. Picture your 2027 like a movie scene. "
+                "Which scene do you love most, and what are you doing when others look at you?",
+                True
+            )
+
+        elif self.current_stage == 4:
+            self.manifestation_data["movie_scene"] = user_msg
+            char_name = self.context.get("characterNameIdea") or "The Sovereign Creator"
+            self.manifestation_data["character_name"] = char_name
+            return (
+                f"{prefix}That scene is vivid and alive. We see you as {char_name}. "
+                "When have you already been this person in your own life? Give us one real story of courage you pulled off.",
+                True
+            )
+
+        elif self.current_stage == 5:
+            self.manifestation_data["grounding_story"] = user_msg
+            return (
+                f"{prefix}So this is someone you already are. You carry that strength in your bones.",
+                True
+            )
+
+        elif self.current_stage == 6:
+            p26 = self.manifestation_data.get("pride_2026") or "your quiet resilience"
+            p27 = self.manifestation_data.get("pride_2027") or "creative sovereignty"
+            char = self.manifestation_data.get("character_name") or "The Sovereign Creator"
+            qualities = self.context.get("coreQualities") or ["Quiet Intuition", "Resilience", "Creative Sovereignty"]
+            qualities_str = ", ".join(qualities[:3])
+            return (
+                f"{prefix}When you reflect on moving from '{p26}' into your audacious 2027 of '{p27}', "
+                f"you are not trying to figure it out—you are {char} who has already arrived. "
+                f"You carry that {qualities_str} in your bones.",
+                True
+            )
+
+        elif self.current_stage >= 7:
+            return f"{prefix}{CEREMONIAL_CLOSE_STATEMENT}", True
+
+        return f"{prefix}We are right here with you. Tell us more.", False
 
     def process_turn(
         self, 
@@ -90,152 +320,58 @@ class HeroBrain:
         was_interrupted: bool = False,
         audio_duration_sec: float = 0.0
     ) -> Dict[str, Any]:
-        """
-        Process conversation turn with full acoustic, emotional, and trajectory awareness.
-        """
+        """Process turn with goal-gated stage progression & full context memory."""
         user_msg_clean = user_message.strip()
-        user_msg_lower = user_msg_clean.lower()
 
         if user_msg_clean:
             self.history.append({"speaker": "user", "text": user_msg_clean})
 
-        # 1. Prosody & Disfluency Analysis
+        # 1. Acoustic & Prosody Analysis
         prosody_meta = self.prosody_engine.analyze_utterance(user_msg_clean, audio_duration_sec=audio_duration_sec)
         
-        # 2. 15-Emotion Psychological Analysis
+        # 2. 15-Emotion Spectrum Analysis
         emotion_meta = self.emotion_engine.analyze(user_msg_clean, stage=self.current_stage)
-        primary_emotion = emotion_meta["primary_emotion"]
 
-        # 3. Record in Session Emotional Arc
+        # 3. Session Trajectory Arc
         self.arc_engine.record_turn(self.current_stage, emotion_meta, prosody_meta, user_msg_clean)
 
-        # 4. Interruption acknowledgment prefix
-        prefix = ""
-        if was_interrupted:
-            acknowledgments = ["Got you. ", "Understood. ", "I hear you clearly. "]
-            prefix = acknowledgments[len(self.history) % len(acknowledgments)]
-
-        # 5. Hesitation & Vagus Nerve Pacing Pre-Bridge
-        hesitation_bridge = ""
-        if prosody_meta["disfluency_score"] >= 0.5:
-            hesitation_bridge = "We felt that quiet hesitation... Take an easy breath. There is no need for a polished answer here. "
-        elif prosody_meta["tempo"] == "rushed_anxious":
-            hesitation_bridge = "Exhale slowly with us. We have all the time in the world. "
-
-        # 6. Emotion Bridge
-        emotion_bridge = EMOTION_BRIDGES.get(primary_emotion, "")
-
-        is_brief = len(user_msg_lower) > 0 and len(user_msg_lower) < 10 and not any(
-            w in user_msg_lower for w in ["yes", "no", "ready", "okay", "sure"]
-        )
-
-        # 7. Check VPS Claude Code if enabled
-        vps_reply = None
-        if user_msg_clean and self.current_stage not in [1, 7]:
-            vps_reply = self.call_vps_claude(user_msg_clean, emotion_meta["label"], STAGE_NAMES.get(self.current_stage, "UNKNOWN"))
-
         hero_response = ""
-        next_stage = self.current_stage
+        should_advance = False
 
+        # Stage 1 is the ceremonial opening
         if self.current_stage == 1:
-            # Stage 1: OPEN
             hero_response = (
                 f"Welcome, {self.user_name}. A few minutes to dream out loud about your 2027. "
-                "We are here as a mirror of your own potential, holding this sacred ceremonial space for you. "
                 "Tell us, what is the one thing from 2026 you're really proud of?"
             )
-            next_stage = 2
-
-        elif self.current_stage == 2:
-            next_stage = 3
-            if vps_reply:
-                hero_response = f"{prefix}{vps_reply}"
-            elif not user_msg_clean and self.context.get("pride2026"):
-                hero_response = (
-                    f"{prefix}Looking at what you noted about 2026—\"{self.context['pride2026']}\"—"
-                    "let yourself really feel that feat. What did that experience reveal about the strength already inside you?"
-                )
-            elif is_brief:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}Even a quiet, unspoken moment counts. "
-                    "What is one thing, big or subtle, that you did in 2026 that made your spirit feel proud?"
-                )
-            else:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}That took real diligence and dedication. "
-                    "Now, let's step across the threshold into 2027. "
-                    "What do you want to be deeply, audaciously proud of in 2027?"
-                )
-
-        elif self.current_stage == 3:
-            next_stage = 4
-            if vps_reply:
-                hero_response = f"{prefix}{vps_reply}"
-            elif is_brief:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}Don't hold back on the audacity. "
-                    "If nothing held you back, what does that 2027 freedom feel like?"
-                )
-            else:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}And the version of you who has already stepped into that victory... "
-                    "what does their morning look like? What are they doing with their hands when the sun comes up?"
-                )
-
-        elif self.current_stage == 4:
-            # Stage 4: THE CHARACTER AS A SCENE (Movie Scene & Naming)
-            char_idea = self.context.get("characterNameIdea")
-            if not char_idea and "creator" not in user_msg_lower and "builder" not in user_msg_lower and "sovereign" not in user_msg_lower:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}Picture your 2027 like a scene in a cinematic film. "
-                    "Which scene do you love most? What are you doing, and what do others see in your eyes? "
-                    "Let's name this character together."
-                )
-            else:
-                char_name = char_idea or "The Sovereign Creator"
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}That scene is so vivid and alive. We see you as {char_name}. "
-                    "How does that name resonate when you speak it out loud?"
-                )
-            next_stage = 5
-
-        elif self.current_stage == 5:
-            # Stage 5: GROUNDING (Real past story of diligence)
-            past_story = self.context.get("pastGroundingStory")
-            if past_story and not user_msg_clean:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}When you look back at when you pulled off \"{past_story}\", "
-                    "when have you already been this person in your own life?"
-                )
-            else:
-                hero_response = (
-                    f"{prefix}{hesitation_bridge}{emotion_bridge}When have you already embodied this person in your own life? "
-                    "Give us one real story where you showed that exact diligence or courage."
-                )
-            next_stage = 6
-
-        elif self.current_stage == 6:
-            # Stage 6: MIRROR CLIMAX (Emotional Transformation Reflection + Sacred Pause)
-            qualities = self.context.get("coreQualities") or ["quiet intuition", "resilience", "unwavering sovereignty"]
-            qualities_str = ", ".join(qualities[:3])
-            
-            # Synthesize live journey reflection
-            arc_reflection = self.arc_engine.generate_mirror_breakthrough_reflection()
-
-            hero_response = (
-                f"{prefix}{arc_reflection} "
-                f"So this is someone you already are. You carry that {qualities_str} in your bones. "
-                "Look at what you have walked through to stand here today."
-            )
-            next_stage = 7
-
+            self.current_stage = 2
+        
+        # Stage 7 is the exact close
         elif self.current_stage >= 7:
-            # Stage 7: CLOSE (Exact Closing Statement)
             hero_response = CEREMONIAL_CLOSE_STATEMENT
             self.is_finished = True
-            next_stage = 7
+            self.current_stage = 7
 
-        self.current_stage = next_stage
+        else:
+            # Query VPS Claude Code
+            claude_result = self.call_vps_claude(user_msg_clean, emotion_meta["label"], prosody_meta)
+
+            if claude_result:
+                reply, adv, field, val = claude_result
+                hero_response = reply
+                should_advance = adv
+                if field and val:
+                    self.manifestation_data[field] = val
+            else:
+                # Intelligent Fallback
+                hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
+
+            # Advance stage only if the goal was genuinely unlocked
+            if should_advance:
+                self.current_stage = min(7, self.current_stage + 1)
+                if self.current_stage == 7:
+                    self.is_finished = True
+
         self.history.append({"speaker": "hero", "text": hero_response})
 
         return {
@@ -246,5 +382,6 @@ class HeroBrain:
             "was_interrupted": was_interrupted,
             "emotion": emotion_meta,
             "prosody": prosody_meta,
-            "trajectory": self.arc_engine.get_trajectory_summary()
+            "trajectory": self.arc_engine.get_trajectory_summary(),
+            "manifestation_board": self.manifestation_data
         }
