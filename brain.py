@@ -9,6 +9,7 @@ Orchestrates:
 - Exact Ceremonial Close
 """
 import json
+import ssl
 import urllib.request
 from typing import Dict, List, Any, Optional
 from config import CEREMONIAL_CLOSE_STATEMENT, USE_VPS_CLAUDE, VPS_CLAUDE_URL, VPS_CLAUDE_TOKEN
@@ -61,6 +62,10 @@ class HeroBrain:
         )
 
         try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
             req = urllib.request.Request(
                 VPS_CLAUDE_URL,
                 data=json.dumps({"prompt": prompt}).encode("utf-8"),
@@ -69,9 +74,11 @@ class HeroBrain:
                     "Authorization": f"Bearer {VPS_CLAUDE_TOKEN}"
                 }
             )
-            with urllib.request.urlopen(req, timeout=10.0) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=12.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 reply = data.get("reply", "").strip()
+                if reply:
+                    print(f"\n[⚡ Connected to VPS Claude Sonnet] Reply: {reply[:60]}...")
                 return reply if reply else None
         except Exception as e:
             print(f"[VPS Claude Fallback Triggered] {e}")
