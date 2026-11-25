@@ -1,20 +1,26 @@
 """
 Hero Dialogue Brain: Emotion & Sentiment-Aware 7-Stage Engine
-Implements:
-- 7 Ceremonial Stages
-- Real-time Emotion & Sentiment Analysis
-- Emotionally Attuned Reflection & Conversational Nuance
-- Barge-in / Interruption Recovery
-- Exact Ceremonial Close
+Expanded with 15-Emotion Psychological Spectrum:
+Adapts cadence, tone, empathy bridges, and reflection to human nuance.
 """
 from typing import Dict, List, Any, Optional
 from config import CEREMONIAL_CLOSE_STATEMENT
 from emotion_engine import (
     EmotionEngine,
     EMOTION_VULNERABLE,
+    EMOTION_GRIEF,
     EMOTION_OVERWHELMED,
+    EMOTION_FRUSTRATION,
+    EMOTION_IMPOSTOR,
+    EMOTION_LONELINESS,
+    EMOTION_SKEPTICAL,
+    EMOTION_CONFUSED,
+    EMOTION_HOPEFUL,
+    EMOTION_DETERMINED,
     EMOTION_PROUD,
     EMOTION_AUDACIOUS,
+    EMOTION_EUPHORIC,
+    EMOTION_GRATITUDE,
     EMOTION_GROUNDED,
     EMOTION_NEUTRAL
 )
@@ -29,6 +35,26 @@ STAGE_NAMES = {
     7: "CLOSE"
 }
 
+# Emotion-Attuned Bridges
+EMOTION_BRIDGES = {
+    EMOTION_VULNERABLE: "Take a breath with us. That raw vulnerability is the truest courage. ",
+    EMOTION_GRIEF: "We honor that loss and the grief you carried. What you walked through carved the depth of who you are now. ",
+    EMOTION_OVERWHELMED: "Exhale slowly. Strip away the chaos and the noise for a moment. You are completely safe here. ",
+    EMOTION_FRUSTRATION: "We hear that fierce fire in your voice. That anger is just your power demanding to be honored. ",
+    EMOTION_IMPOSTOR: "We hear the self-doubt whispering, but look at what your own hands built. You are no stranger to this strength. ",
+    EMOTION_LONELINESS: "You don't have to carry the mountain alone in this room. We are standing right here as your mirror. ",
+    EMOTION_SKEPTICAL: "It's healthy to be guarded. You don't need blind belief; we only look at what your own life has proven. ",
+    EMOTION_CONFUSED: "When the horizon feels foggy, we don't look a mile ahead—just at the very next breath. ",
+    EMOTION_HOPEFUL: "Hold that tender hope close. Let yourself dare to want what your spirit has been whispering. ",
+    EMOTION_DETERMINED: "Look at that relentless grit in your spine. Nothing could break that diligence. ",
+    EMOTION_PROUD: "Let yourself truly savour that victory in your bones. That took real self-honouring. ",
+    EMOTION_AUDACIOUS: "Feel that bold electric sovereignty commanding the room. ",
+    EMOTION_EUPHORIC: "We celebrate that pure lightness, vitality, and joy with you. ",
+    EMOTION_GRATITUDE: "Let that gratitude ripple through every cell for a quiet breath. ",
+    EMOTION_GROUNDED: "Notice how tranquil and unhurried that morning peace feels. ",
+    EMOTION_NEUTRAL: ""
+}
+
 class HeroBrain:
     def __init__(self, context: Optional[Dict[str, Any]] = None):
         self.context = context or {}
@@ -39,7 +65,6 @@ class HeroBrain:
         self.emotion_engine = EmotionEngine()
 
     def reset(self):
-        """Reset conversation state."""
         self.current_stage = 1
         self.history = []
         self.is_finished = False
@@ -47,7 +72,7 @@ class HeroBrain:
 
     def process_turn(self, user_message: str = "", was_interrupted: bool = False) -> Dict[str, Any]:
         """
-        Process conversation turn with full sentiment & emotion context awareness.
+        Process conversation turn with full 15-spectrum emotion & sentiment awareness.
         """
         user_msg_clean = user_message.strip()
         user_msg_lower = user_msg_clean.lower()
@@ -55,7 +80,7 @@ class HeroBrain:
         if user_msg_clean:
             self.history.append({"speaker": "user", "text": user_msg_clean})
 
-        # Real-time Emotion & Sentiment Analysis
+        # Real-time Emotion & Sentiment Analysis across 15 states
         emotion_meta = self.emotion_engine.analyze(user_msg_clean, stage=self.current_stage)
         primary_emotion = emotion_meta["primary_emotion"]
 
@@ -65,18 +90,8 @@ class HeroBrain:
             acknowledgments = ["Got you. ", "Understood. ", "I hear you clearly. "]
             prefix = acknowledgments[len(self.history) % len(acknowledgments)]
 
-        # Emotion-Attuned Bridging Phrase
-        emotion_bridge = ""
-        if primary_emotion == EMOTION_VULNERABLE:
-            emotion_bridge = "Take a breath with us. That vulnerability is genuine courage. "
-        elif primary_emotion == EMOTION_OVERWHELMED:
-            emotion_bridge = "Exhale slowly. Strip away the chaos for a moment. You are safe here. "
-        elif primary_emotion == EMOTION_AUDACIOUS:
-            emotion_bridge = "Feel the bold electricity in that vision. "
-        elif primary_emotion == EMOTION_PROUD:
-            emotion_bridge = "Let yourself truly savour that victory in your bones. "
-        elif primary_emotion == EMOTION_GROUNDED:
-            emotion_bridge = "Notice how serene that feels when spoken out loud. "
+        # Emotion Bridge
+        emotion_bridge = EMOTION_BRIDGES.get(primary_emotion, "")
 
         is_brief = len(user_msg_lower) > 0 and len(user_msg_lower) < 10 and not any(
             w in user_msg_lower for w in ["yes", "no", "ready", "okay", "sure"]
@@ -108,7 +123,7 @@ class HeroBrain:
                 )
             else:
                 hero_response = (
-                    f"{prefix}{emotion_bridge}That took real diligence and self-honouring. "
+                    f"{prefix}{emotion_bridge}That took real diligence and dedication. "
                     "Now, let's step across the threshold into 2027. "
                     "What do you want to be deeply, audaciously proud of in 2027?"
                 )
