@@ -236,6 +236,26 @@ PROFILES = {
     }
 }
 
+# Emotion-Attuned Verbal Bridges for Conversational Agent
+EMOTION_BRIDGES = {
+    EMOTION_VULNERABLE: "Take a breath with us. That raw vulnerability is the truest courage. ",
+    EMOTION_GRIEF: "We honor that loss and the grief you carried. What you walked through carved the depth of who you are now. ",
+    EMOTION_OVERWHELMED: "Exhale slowly. Strip away the chaos and the noise for a moment. You are completely safe here. ",
+    EMOTION_FRUSTRATION: "We hear that fierce fire in your voice. That anger is just your power demanding to be honored. ",
+    EMOTION_IMPOSTOR: "We hear the self-doubt whispering, but look at what your own hands built. You are no stranger to this strength. ",
+    EMOTION_LONELINESS: "You don't have to carry the mountain alone in this room. We are standing right here as your mirror. ",
+    EMOTION_SKEPTICAL: "It's healthy to be guarded. You don't need blind belief; we only look at what your own life has proven. ",
+    EMOTION_CONFUSED: "When the horizon feels foggy, we don't look a mile ahead—just at the very next breath. ",
+    EMOTION_HOPEFUL: "Hold that tender hope close. Let yourself dare to want what your spirit has been whispering. ",
+    EMOTION_DETERMINED: "Look at that relentless grit in your spine. Nothing could break that diligence. ",
+    EMOTION_PROUD: "Let yourself truly savour that victory in your bones. That took real self-honouring. ",
+    EMOTION_AUDACIOUS: "Feel that bold electric sovereignty commanding the room. ",
+    EMOTION_EUPHORIC: "We celebrate that pure lightness, vitality, and joy with you. ",
+    EMOTION_GRATITUDE: "Let that gratitude ripple through every cell for a quiet breath. ",
+    EMOTION_GROUNDED: "Notice how tranquil and unhurried that morning peace feels. ",
+    EMOTION_NEUTRAL: ""
+}
+
 class EmotionEngine:
     def __init__(self):
         self.history_emotions: List[Dict[str, Any]] = []

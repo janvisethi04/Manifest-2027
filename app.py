@@ -34,6 +34,7 @@ class ChatRequest(BaseModel):
     current_stage: int = 1
     voice: Optional[str] = DEFAULT_VOICE
     context: Optional[Dict[str, Any]] = None
+    audio_duration_sec: Optional[float] = 0.0
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_agent_ui():
@@ -46,13 +47,14 @@ async def serve_agent_ui():
 
 @app.post("/api/chat")
 async def process_chat_turn(req: ChatRequest):
-    """Process conversation turn with full sentiment & emotion context awareness."""
+    """Process conversation turn with full sentiment, prosody & emotional arc awareness."""
     brain = HeroBrain(context=req.context or {})
     brain.current_stage = req.current_stage
     
     turn_result = brain.process_turn(
         user_message=req.user_message,
-        was_interrupted=req.was_interrupted
+        was_interrupted=req.was_interrupted,
+        audio_duration_sec=req.audio_duration_sec or 0.0
     )
     
     return JSONResponse({
@@ -62,7 +64,9 @@ async def process_chat_turn(req: ChatRequest):
         "stage_name": turn_result["stage_name"],
         "is_finished": turn_result["is_finished"],
         "was_interrupted": turn_result["was_interrupted"],
-        "emotion": turn_result.get("emotion", {})
+        "emotion": turn_result.get("emotion", {}),
+        "prosody": turn_result.get("prosody", {}),
+        "trajectory": turn_result.get("trajectory", [])
     })
 
 @app.get("/api/tts")

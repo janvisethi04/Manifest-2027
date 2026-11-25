@@ -23,9 +23,7 @@
       user-select: none;
     }
 
-    .font-cinzel {
-      font-family: 'Cinzel', serif;
-    }
+    .font-cinzel { font-family: 'Cinzel', serif; }
 
     .celestial-bg {
       background: 
@@ -95,10 +93,7 @@
       mix-blend-mode: screen;
     }
 
-    .core-idle {
-      animation: coreBreathe 5s ease-in-out infinite;
-    }
-
+    .core-idle { animation: coreBreathe 5s ease-in-out infinite; }
     .core-listening {
       animation: coreListen 1.5s ease-in-out infinite;
       box-shadow: 
@@ -117,25 +112,20 @@
         0 0 150px rgba(224, 159, 88, 0.5);
     }
 
-    .core-interrupted {
-      animation: coreBargeIn 0.35s ease-out;
-    }
+    .core-interrupted { animation: coreBargeIn 0.35s ease-out; }
 
     @keyframes coreBreathe {
       0%, 100% { transform: scale(1); filter: brightness(1); }
       50% { transform: scale(1.035); filter: brightness(1.08); }
     }
-
     @keyframes coreListen {
       0%, 100% { transform: scale(1.02); }
       50% { transform: scale(1.07); }
     }
-
     @keyframes coreSpeak {
       0% { transform: scale(1.02) rotate(-1deg); }
       100% { transform: scale(1.1) rotate(1deg); }
     }
-
     @keyframes coreBargeIn {
       0% { transform: scale(1.14); filter: brightness(1.4) saturate(1.3); }
       100% { transform: scale(1); filter: brightness(1); }
@@ -154,7 +144,7 @@
 </head>
 <body class="h-screen flex flex-col celestial-bg text-slate-200">
 
-  <!-- TOP STATUS & EMOTION HORIZON BAR -->
+  <!-- TOP STATUS & EMOTIONAL HORIZON BAR -->
   <header class="h-16 border-b border-white/5 bg-black/40 backdrop-blur-md px-6 flex items-center justify-between z-30">
     <!-- Brand -->
     <div class="flex items-center space-x-3">
@@ -166,9 +156,9 @@
       <div>
         <div class="flex items-center space-x-2">
           <h1 class="font-cinzel text-sm font-semibold tracking-wider text-white">MANIFEST 2027</h1>
-          <span class="text-[10px] uppercase tracking-widest text-amber-400/80 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">Emotion & Sentiment Aware</span>
+          <span class="text-[10px] uppercase tracking-widest text-amber-400/80 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">Prosody & Arc Aware</span>
         </div>
-        <p class="text-[11px] text-slate-400">Hero • Conscious Mirror</p>
+        <p class="text-[11px] text-slate-400">Hero • Conscious Human Mirror</p>
       </div>
     </div>
 
@@ -213,7 +203,7 @@
 
       <button onclick="openModal('debugModal')" class="flex items-center space-x-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 px-3 py-1.5 rounded-xl transition text-slate-300 hover:text-white">
         <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-        <span>Telemetry</span>
+        <span>Trajectory & Arc</span>
       </button>
     </div>
   </header>
@@ -258,25 +248,32 @@
         </button>
       </div>
 
-      <!-- Bottom Audio & Emotion Context Controls -->
-      <div class="flex items-center space-x-4 bg-[#11131c]/90 border border-white/10 px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-md text-xs font-medium">
-        <button id="muteBtn" onclick="toggleMute()" class="flex items-center space-x-2 text-slate-300 hover:text-white transition">
+      <!-- Bottom Audio, Prosody & Emotion Controls -->
+      <div class="flex items-center space-x-3 bg-[#11131c]/90 border border-white/10 px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-md text-xs font-medium">
+        <button id="muteBtn" onclick="toggleMute()" class="flex items-center space-x-1.5 text-slate-300 hover:text-white transition">
           <svg id="muteIcon" class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>
-          <span id="muteLabel">Mute Mic</span>
+          <span id="muteLabel">Mute</span>
         </button>
 
-        <div class="h-3.5 w-px bg-white/10"></div>
+        <div class="h-3 w-px bg-white/10"></div>
 
-        <div class="flex items-center space-x-1.5 text-slate-400 text-[11px]">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          <span>Barge-in: <strong class="text-emerald-300">&lt;10ms</strong></span>
+        <div class="flex items-center space-x-1 text-slate-400 text-[11px]">
+          <span>Cadence:</span>
+          <span id="wpmBadge" class="text-amber-300 font-mono">135 WPM</span>
         </div>
 
-        <div class="h-3.5 w-px bg-white/10"></div>
+        <div class="h-3 w-px bg-white/10"></div>
 
-        <div class="flex items-center space-x-1.5 text-slate-400 text-[11px]">
-          <span>Sentiment:</span>
-          <span id="polarityBadge" class="text-amber-300 font-mono">0.00</span>
+        <div class="flex items-center space-x-1 text-slate-400 text-[11px]">
+          <span>Hesitation:</span>
+          <span id="hesitationBadge" class="text-emerald-300 font-medium">Minimal</span>
+        </div>
+
+        <div class="h-3 w-px bg-white/10"></div>
+
+        <div class="flex items-center space-x-1 text-slate-400 text-[11px]">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span>Barge-in: <strong class="text-emerald-300">&lt;10ms</strong></span>
         </div>
       </div>
 
@@ -295,7 +292,7 @@
           </div>
           <h2 class="font-cinzel text-base font-semibold text-white tracking-wide">The 2027 Mirror Call</h2>
           <p class="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-            A conscious conversational space. Hero senses your emotional cadence, vulnerability, and audacity—attuning its voice and reflection to your state.
+            A conscious conversational space. Hero senses your vocal cadence, micro-hesitations, and emotional arc—reflecting the transformation of who you are becoming.
           </p>
           <div class="pt-2">
             <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-300/90 bg-amber-400/10 border border-amber-400/20 px-3 py-1 rounded-full">
@@ -393,33 +390,35 @@
     </div>
   </div>
 
-  <!-- MODAL: TELEMETRY & EMOTION LOG -->
+  <!-- MODAL: EMOTIONAL TRAJECTORY ARC & TELEMETRY -->
   <div id="debugModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
     <div class="glass-panel bg-[#12141f] rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-white/10">
       <div class="flex items-center justify-between pb-4 border-b border-white/10">
-        <h3 class="font-cinzel text-sm font-bold text-white tracking-wide">Live Emotion & Agent Telemetry</h3>
+        <h3 class="font-cinzel text-sm font-bold text-white tracking-wide">Session Emotional Arc & Trajectory</h3>
         <button onclick="closeModal('debugModal')" class="text-slate-400 hover:text-white">✕</button>
       </div>
-      <div class="py-4 space-y-2.5 text-xs">
-        <div class="flex justify-between py-1.5 border-b border-white/5">
-          <span class="text-slate-400">Detected Emotion State</span>
-          <span id="telemetryEmotion" class="text-violet-300 font-mono font-bold">Open & Receptive</span>
+      <div class="py-4 space-y-3 text-xs">
+        <!-- Visual Trajectory Arc Timeline -->
+        <div>
+          <span class="text-slate-400 block mb-2 font-medium">Emotional Progression Across Stages:</span>
+          <div id="trajectoryList" class="space-y-2 bg-white/[0.02] border border-white/5 p-3 rounded-xl max-h-48 overflow-y-auto">
+            <div class="text-slate-500 text-[11px] italic">No stages recorded yet. Speak to begin your journey.</div>
+          </div>
         </div>
-        <div class="flex justify-between py-1.5 border-b border-white/5">
-          <span class="text-slate-400">Sentiment Polarity</span>
-          <span id="telemetryPolarity" class="text-amber-300 font-mono font-bold">0.00 (Neutral)</span>
-        </div>
-        <div class="flex justify-between py-1.5 border-b border-white/5">
-          <span class="text-slate-400">Voice Cadence & Modulation</span>
-          <span id="telemetryCadence" class="text-emerald-300 font-mono">Rate: -2% | Pitch: +0Hz</span>
-        </div>
-        <div class="flex justify-between py-1.5 border-b border-white/5">
-          <span class="text-slate-400">Barge-in Interruption Latency</span>
-          <span class="text-emerald-400 font-mono font-bold">&lt; 10 ms (Instant Cutoff)</span>
-        </div>
-        <div class="flex justify-between py-1.5 border-b border-white/5">
-          <span class="text-slate-400">Dialogue Stage</span>
-          <span id="telemetryStage" class="text-amber-300 font-mono">1 / 7 (OPEN)</span>
+
+        <div class="pt-2 border-t border-white/5 space-y-2">
+          <div class="flex justify-between py-1 border-b border-white/5">
+            <span class="text-slate-400">Speech Pace & Tempo</span>
+            <span id="telemetryWPM" class="text-amber-300 font-mono font-bold">135.0 WPM (Centered)</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-white/5">
+            <span class="text-slate-400">Hesitation Disfluency Score</span>
+            <span id="telemetryDisfluency" class="text-emerald-300 font-mono">0.0 (Clear & Resonant)</span>
+          </div>
+          <div class="flex justify-between py-1 border-b border-white/5">
+            <span class="text-slate-400">Barge-in Interruption Latency</span>
+            <span class="text-emerald-400 font-mono font-bold">&lt; 10 ms (Instant Cutoff)</span>
+          </div>
         </div>
       </div>
     </div>
@@ -437,6 +436,7 @@
     let selectedVoice = "en-US-ChristopherNeural";
     let currentVoiceRate = "+0%";
     let currentVoicePitch = "+0Hz";
+    let utteranceStartTime = 0;
 
     const stageNames = {
       1: "1. Welcome Ritual",
@@ -469,6 +469,7 @@
       recognition.onstart = () => {
         setCoreState("core-listening");
         updateStatus("Hero is listening...", "emerald");
+        utteranceStartTime = Date.now();
       };
 
       recognition.onspeechstart = () => {
@@ -487,7 +488,10 @@
         if (transcript.trim().length > 0) {
           const wasInterrupted = isHeroSpeaking;
           if (isHeroSpeaking) triggerBargeIn();
-          sendTurn(transcript.trim(), wasInterrupted);
+          
+          const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
+          sendTurn(transcript.trim(), wasInterrupted, durationSec);
+          utteranceStartTime = Date.now();
         }
       };
 
@@ -518,7 +522,7 @@
         try { recognition.start(); } catch(e) {}
       }
 
-      sendTurn("", false);
+      sendTurn("", false, 0.0);
     }
 
     function endCall() {
@@ -541,12 +545,12 @@
       const label = document.getElementById("muteLabel");
       const icon = document.getElementById("muteIcon");
       if (isMuted) {
-        label.innerText = "Unmute Mic";
+        label.innerText = "Unmute";
         icon.classList.remove("text-amber-400");
         icon.classList.add("text-rose-400");
         if (recognition) try { recognition.stop(); } catch(e) {}
       } else {
-        label.innerText = "Mute Mic";
+        label.innerText = "Mute";
         icon.classList.remove("text-rose-400");
         icon.classList.add("text-amber-400");
         if (isCallActive && recognition) try { recognition.start(); } catch(e) {}
@@ -571,13 +575,13 @@
       isHeroSpeaking = false;
     }
 
-    async function sendTurn(userMessage, wasInterrupted) {
+    async function sendTurn(userMessage, wasInterrupted, durationSec = 0.0) {
       if (userMessage) {
         appendMessage("user", userMessage, wasInterrupted);
       }
 
       setCoreState("core-idle");
-      updateStatus("Hero is sensing emotion...", "violet");
+      updateStatus("Hero is sensing emotion & prosody...", "violet");
 
       try {
         const resp = await fetch("/api/chat", {
@@ -588,7 +592,8 @@
             was_interrupted: wasInterrupted,
             current_stage: currentStage,
             voice: selectedVoice,
-            context: context
+            context: context,
+            audio_duration_sec: durationSec
           })
         });
 
@@ -599,6 +604,15 @@
         // Apply Emotion Feedback
         if (data.emotion) {
           applyEmotionFeedback(data.emotion);
+        }
+
+        // Apply Prosody & Arc Telemetry
+        if (data.prosody) {
+          applyProsodyTelemetry(data.prosody);
+        }
+
+        if (data.trajectory) {
+          renderTrajectoryArc(data.trajectory);
         }
 
         appendMessage("hero", data.hero_response, false, data.stage_name, data.emotion);
@@ -617,18 +631,48 @@
     function applyEmotionFeedback(emotion) {
       document.getElementById("emotionLabel").innerText = emotion.label;
       document.getElementById("emotionDot").style.backgroundColor = emotion.color;
-      document.getElementById("polarityBadge").innerText = (emotion.polarity > 0 ? "+" : "") + emotion.polarity;
 
-      // Dynamically morph orb aura color based on user's emotion
       document.documentElement.style.setProperty('--core-glow', emotion.color);
       document.getElementById("ring1").style.borderColor = emotion.color;
 
       currentVoiceRate = emotion.voice_rate || "+0%";
       currentVoicePitch = emotion.voice_pitch || "+0Hz";
+    }
 
-      document.getElementById("telemetryEmotion").innerText = emotion.label;
-      document.getElementById("telemetryPolarity").innerText = `${emotion.polarity} (${emotion.intensity})`;
-      document.getElementById("telemetryCadence").innerText = `Rate: ${currentVoiceRate} | Pitch: ${currentVoicePitch}`;
+    function applyProsodyTelemetry(prosody) {
+      document.getElementById("wpmBadge").innerText = `${prosody.wpm} WPM`;
+      
+      const hesitationBadge = document.getElementById("hesitationBadge");
+      if (prosody.disfluency_score >= 0.5) {
+        hesitationBadge.innerText = "Noticeable";
+        hesitationBadge.className = "text-amber-400 font-medium";
+      } else {
+        hesitationBadge.innerText = "Minimal";
+        hesitationBadge.className = "text-emerald-300 font-medium";
+      }
+
+      document.getElementById("telemetryWPM").innerText = `${prosody.wpm} WPM (${prosody.pace_label})`;
+      document.getElementById("telemetryDisfluency").innerText = `${prosody.disfluency_score} (${prosody.tension_state})`;
+    }
+
+    function renderTrajectoryArc(trajectory) {
+      const container = document.getElementById("trajectoryList");
+      if (!trajectory || trajectory.length === 0) return;
+      container.innerHTML = "";
+
+      trajectory.forEach(record => {
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between p-2 rounded-lg bg-white/[0.03] text-[11px] border border-white/5";
+        row.innerHTML = `
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full" style="background-color: ${record.color};"></span>
+            <span class="font-semibold text-white">Stage ${record.stage}:</span>
+            <span class="text-slate-300">${record.emotion_label}</span>
+          </div>
+          <span class="font-mono text-slate-400">${record.wpm} WPM</span>
+        `;
+        container.appendChild(row);
+      });
     }
 
     async function playSpeech(text) {
@@ -646,6 +690,7 @@
           if (isCallActive) {
             setCoreState("core-listening");
             updateStatus("Hero is listening...", "emerald");
+            utteranceStartTime = Date.now();
           } else {
             setCoreState("core-idle");
             updateStatus("Ready", "slate");
@@ -675,7 +720,7 @@
 
       const wasInterrupted = isHeroSpeaking;
       if (isHeroSpeaking) triggerBargeIn();
-      sendTurn(val, wasInterrupted);
+      sendTurn(val, wasInterrupted, 0.0);
     }
 
     function appendMessage(speaker, text, wasInterrupted = false, stageName = "", emotion = null) {
@@ -738,7 +783,6 @@
     function updateStageUI(stageNum) {
       const label = stageNames[stageNum] || `Stage ${stageNum}`;
       document.getElementById("currentStageName").innerText = label;
-      document.getElementById("telemetryStage").innerText = `${stageNum} / 7 (${label})`;
 
       const dots = document.getElementById("stageDots").children;
       for (let i = 0; i < dots.length; i++) {
