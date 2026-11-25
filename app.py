@@ -29,6 +29,7 @@ if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR, exist_ok=True)
 
 SESSION_STORE: Dict[str, HeroBrain] = {}
+TTS_CACHE: Dict[str, bytes] = {}
 
 class ChatRequest(BaseModel):
     user_message: str = ""
@@ -122,6 +123,20 @@ async def generate_tts(
     rate_val = rate or "+0%"
     pitch_val = pitch or "+0Hz"
     
+    cache_key = f"{voice_name}_{rate_val}_{pitch_val}_{text.strip()}"
+    if cache_key in TTS_CACHE:
+        cached_bytes = TTS_CACHE[cache_key]
+        return Response(
+            content=cached_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Length": str(len(cached_bytes)),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=86400",
+                "X-TTS-Cache": "HIT"
+            }
+        )
+    
     try:
         communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
         chunks = []
@@ -129,6 +144,8 @@ async def generate_tts(
             if chunk["type"] == "audio":
                 chunks.append(chunk["data"])
         audio_bytes = b"".join(chunks)
+        if len(audio_bytes) > 0 and len(TTS_CACHE) < 200:
+            TTS_CACHE[cache_key] = audio_bytes
         
         return Response(
             content=audio_bytes,

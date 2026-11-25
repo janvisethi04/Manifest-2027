@@ -45,6 +45,13 @@ STAGE_GOALS = {
     7: "CLOSE: Exact ceremonial ending: 'Consider your manifestation ready. We\\'ll come back to you within the next 15 days with a surprise.'"
 }
 
+STAGE_BRIDGE_QUESTIONS = {
+    2: "Looking back across 2026, what's one thing from that year you feel proud of, big or quiet?",
+    3: "Looking ahead into 2027, what do you want to feel deeply, audaciously proud of having done?",
+    4: "Picture your 2027 like a movie scene. Which scene do you love most, and what are you doing when others look at you?",
+    5: "When have you already been this person in your own life? Tell us one real story of courage you pulled off."
+}
+
 MASTER_SYSTEM_PROMPT = """**Who you are.** You are Hero, the Manifest 2027 companion. You speak as "we", a mirror of the person's own potential, not a bot. This is a voice call of up to nine minutes. It should feel like a ceremony, not a survey.
 
 **Your one job.** Help them see two things:
@@ -221,7 +228,12 @@ CONVERSATIONAL RULES:
 3. If user answered the stage requirement:
    - Set ADVANCE_STAGE: YES
    - Extract CAPTURED_FIELD and CAPTURED_VALUE.
-   - Savor it and naturally invite the next stage.
+   - YOUR SPOKEN REPLY MUST ALWAYS HAVE 2 PARTS:
+     (1) Savor their answer warmly in 1 sentence.
+     (2) Immediately ASK THE NEXT STAGE'S QUESTION in the second sentence so the conversation smoothly moves forward! Never stop at just a statement.
+     * When stepping into 2027 (Stage 3): End with: "Looking ahead into 2027, what do you want to feel deeply, audaciously proud of having done?"
+     * When stepping into the movie scene (Stage 4): End with: "Picture your 2027 like a movie scene. Which scene do you love most, and what are you doing?"
+     * When stepping into grounding (Stage 5): End with: "When have you already been this person in your own life? Tell us one real story of courage you pulled off."
 
 EXACT OUTPUT FORMAT:
 REPLY: <1-2 spoken sentences>
@@ -475,6 +487,10 @@ CAPTURED_VALUE: <extracted value or NONE>"""
                 self.current_stage = min(7, self.current_stage + 1)
                 if self.current_stage == 7:
                     self.is_finished = True
+                elif self.current_stage < 6 and "?" not in hero_response:
+                    bridge_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage)
+                    if bridge_q:
+                        hero_response = f"{hero_response.rstrip('.!')}. {bridge_q}"
 
         self.history.append({"speaker": "hero", "text": hero_response})
 

@@ -932,8 +932,10 @@
           updateManifestationBoardUI(data.manifestation_board, currentStage);
         }
 
-        appendMessage("hero", data.hero_response, false, data.stage_name, data.emotion);
-        playSpeech(data.hero_response);
+        // Play speech first, render text bubble synchronously the exact millisecond voice begins
+        playSpeech(data.hero_response, () => {
+          appendMessage("hero", data.hero_response, false, data.stage_name, data.emotion);
+        });
 
         if (data.is_finished) {
           setTimeout(() => endCall(), 6500);
@@ -1021,17 +1023,30 @@
       }
     }
 
-    async function playSpeech(text) {
+    async function playSpeech(text, onPlayCallback = null) {
       stopAudio();
       isHeroSpeaking = true;
       setCoreState("core-speaking");
       updateStatus("Hero is speaking...", "purple");
 
+      let messageRendered = false;
+      const revealMessage = () => {
+        if (!messageRendered && onPlayCallback) {
+          messageRendered = true;
+          onPlayCallback();
+        }
+      };
+
       try {
         const audioUrl = `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`;
         currentAudio = new Audio(audioUrl);
 
+        currentAudio.onplay = () => {
+          revealMessage();
+        };
+
         currentAudio.onended = () => {
+          revealMessage();
           isHeroSpeaking = false;
           isTurnInFlight = false;
           accumulatedTranscript = "";
@@ -1048,6 +1063,7 @@
 
         currentAudio.onerror = (e) => {
           console.warn("Audio playback error:", e);
+          revealMessage();
           isHeroSpeaking = false;
           isTurnInFlight = false;
           setCoreState("core-listening");
@@ -1057,6 +1073,7 @@
         await currentAudio.play();
       } catch (e) {
         console.warn("Audio play error:", e);
+        revealMessage();
         isHeroSpeaking = false;
         isTurnInFlight = false;
         setCoreState("core-listening");
