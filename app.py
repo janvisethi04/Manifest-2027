@@ -1,9 +1,10 @@
 """
 Hero Voice Agent: Full Studio Application
-Serves the ElevenLabs-style Living Voice Agent UI and provides:
-- Live 7-Stage Ceremonial Brain processing
-- High-definition Edge-TTS neural audio streaming
-- Instant barge-in / interruption handling
+Serves the Manifest 2027 Mirror Chamber UI with:
+- Sentiment & Emotion Context Awareness
+- Emotionally Attuned 7-Stage Brain
+- Dynamic SSML Voice Modulation (rate & pitch) via Edge-TTS
+- Zero-latency Barge-in (<10ms)
 """
 import os
 import sys
@@ -14,7 +15,6 @@ from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import edge_tts
@@ -24,7 +24,6 @@ from config import DEFAULT_VOICE, HINDI_VOICE, FEMALE_VOICE
 
 app = FastAPI(title="Manifest 2027 Voice Agent")
 
-# Mount static directory
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR, exist_ok=True)
@@ -38,7 +37,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_agent_ui():
-    """Serve the exact ElevenLabs-style living Voice Agent UI."""
+    """Serve the Manifest 2027 Mirror Chamber UI."""
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
@@ -47,7 +46,7 @@ async def serve_agent_ui():
 
 @app.post("/api/chat")
 async def process_chat_turn(req: ChatRequest):
-    """Process conversation turn through Hero 7-Stage Brain."""
+    """Process conversation turn with full sentiment & emotion context awareness."""
     brain = HeroBrain(context=req.context or {})
     brain.current_stage = req.current_stage
     
@@ -62,23 +61,30 @@ async def process_chat_turn(req: ChatRequest):
         "current_stage": turn_result["current_stage"],
         "stage_name": turn_result["stage_name"],
         "is_finished": turn_result["is_finished"],
-        "was_interrupted": turn_result["was_interrupted"]
+        "was_interrupted": turn_result["was_interrupted"],
+        "emotion": turn_result.get("emotion", {})
     })
 
 @app.get("/api/tts")
-async def generate_tts(text: str, voice: Optional[str] = DEFAULT_VOICE):
-    """Synthesize text into studio-quality neural MP3 stream."""
+async def generate_tts(
+    text: str, 
+    voice: Optional[str] = DEFAULT_VOICE,
+    rate: Optional[str] = "+0%",
+    pitch: Optional[str] = "+0Hz"
+):
+    """Synthesize text with emotional modulation (rate, pitch) into studio-quality MP3."""
     if not text or not text.strip():
         return JSONResponse({"error": "Empty text"}, status_code=400)
     
     voice_name = voice or DEFAULT_VOICE
+    rate_val = rate or "+0%"
+    pitch_val = pitch or "+0Hz"
     
-    # Generate temp audio
     temp_fd, temp_path = tempfile.mkstemp(suffix=".mp3", prefix="agent_tts_")
     os.close(temp_fd)
     
     try:
-        communicate = edge_tts.Communicate(text, voice_name)
+        communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
         await communicate.save(temp_path)
         return FileResponse(
             temp_path,
@@ -87,29 +93,19 @@ async def generate_tts(text: str, voice: Optional[str] = DEFAULT_VOICE):
         )
     except Exception as e:
         print(f"[TTS Error] {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.websocket("/ws/agent")
-async def websocket_endpoint(websocket: WebSocket):
-    """Bidirectional WebSocket for low-latency voice streaming and barge-in."""
-    await websocket.accept()
-    brain = HeroBrain()
-    try:
-        while True:
-            data = await websocket.receive_json()
-            user_msg = data.get("user_message", "")
-            was_interrupted = data.get("was_interrupted", False)
-            
-            turn_result = brain.process_turn(user_msg, was_interrupted=was_interrupted)
-            await websocket.send_json(turn_result)
-    except WebSocketDisconnect:
-        pass
+        # Fallback to standard generation
+        try:
+            fallback = edge_tts.Communicate(text, voice_name)
+            await fallback.save(temp_path)
+            return FileResponse(temp_path, media_type="audio/mpeg")
+        except Exception as e2:
+            return JSONResponse({"error": str(e2)}, status_code=500)
 
 def run_app(port: int = 8000, open_browser: bool = False):
     print("=" * 65)
     print("🕯️  HERO: MANIFEST 2027 VOICE AGENT STUDIO")
     print(f"🌐  Server running at: http://localhost:{port}")
-    print("⚡  Features: 7-Stage Brain | Edge-TTS | Barge-in (<10ms)")
+    print("🧠  Features: Sentiment & Emotion Engine | 7-Stage Brain | Edge-TTS")
     print("=" * 65)
     
     if open_browser:

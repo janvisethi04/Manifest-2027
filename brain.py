@@ -1,13 +1,23 @@
 """
-Hero Dialogue Brain: 7-Stage Ceremonial Dialogue Engine
-Implements the exact Manifest 2027 Master System Prompt with:
+Hero Dialogue Brain: Emotion & Sentiment-Aware 7-Stage Engine
+Implements:
 - 7 Ceremonial Stages
-- Real-time Interruption (Barge-in) Handling
-- Vague Answer Gentle Elicitation
-- Zero-drift Exact Close Statement
+- Real-time Emotion & Sentiment Analysis
+- Emotionally Attuned Reflection & Conversational Nuance
+- Barge-in / Interruption Recovery
+- Exact Ceremonial Close
 """
 from typing import Dict, List, Any, Optional
 from config import CEREMONIAL_CLOSE_STATEMENT
+from emotion_engine import (
+    EmotionEngine,
+    EMOTION_VULNERABLE,
+    EMOTION_OVERWHELMED,
+    EMOTION_PROUD,
+    EMOTION_AUDACIOUS,
+    EMOTION_GROUNDED,
+    EMOTION_NEUTRAL
+)
 
 STAGE_NAMES = {
     1: "OPEN",
@@ -21,42 +31,23 @@ STAGE_NAMES = {
 
 class HeroBrain:
     def __init__(self, context: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the Hero Brain with user context.
-        context keys:
-            - user_name: str
-            - preferred_language: str
-            - pride2026: str
-            - pride2027: str
-            - dayInTheLife2027: str
-            - movieScene: str
-            - coreQualities: list of str
-            - pastGroundingStory: str
-            - characterNameIdea: str
-        """
         self.context = context or {}
         self.user_name = self.context.get("user_name", "friend")
         self.current_stage = 1
         self.history: List[Dict[str, str]] = []
         self.is_finished = False
+        self.emotion_engine = EmotionEngine()
 
     def reset(self):
         """Reset conversation state."""
         self.current_stage = 1
         self.history = []
         self.is_finished = False
+        self.emotion_engine = EmotionEngine()
 
     def process_turn(self, user_message: str = "", was_interrupted: bool = False) -> Dict[str, Any]:
         """
-        Process a conversation turn based on user input, current stage, and barge-in state.
-        Returns:
-            {
-                "hero_response": str,
-                "current_stage": int,
-                "stage_name": str,
-                "is_finished": bool,
-                "was_interrupted": bool
-            }
+        Process conversation turn with full sentiment & emotion context awareness.
         """
         user_msg_clean = user_message.strip()
         user_msg_lower = user_msg_clean.lower()
@@ -64,13 +55,29 @@ class HeroBrain:
         if user_msg_clean:
             self.history.append({"speaker": "user", "text": user_msg_clean})
 
-        # Interruption / Barge-in acknowledgment
+        # Real-time Emotion & Sentiment Analysis
+        emotion_meta = self.emotion_engine.analyze(user_msg_clean, stage=self.current_stage)
+        primary_emotion = emotion_meta["primary_emotion"]
+
+        # Interruption acknowledgment prefix
         prefix = ""
         if was_interrupted:
-            acknowledgments = ["Got you. ", "Understood. ", "I hear you. "]
+            acknowledgments = ["Got you. ", "Understood. ", "I hear you clearly. "]
             prefix = acknowledgments[len(self.history) % len(acknowledgments)]
 
-        # Check for brief / vague responses
+        # Emotion-Attuned Bridging Phrase
+        emotion_bridge = ""
+        if primary_emotion == EMOTION_VULNERABLE:
+            emotion_bridge = "Take a breath with us. That vulnerability is genuine courage. "
+        elif primary_emotion == EMOTION_OVERWHELMED:
+            emotion_bridge = "Exhale slowly. Strip away the chaos for a moment. You are safe here. "
+        elif primary_emotion == EMOTION_AUDACIOUS:
+            emotion_bridge = "Feel the bold electricity in that vision. "
+        elif primary_emotion == EMOTION_PROUD:
+            emotion_bridge = "Let yourself truly savour that victory in your bones. "
+        elif primary_emotion == EMOTION_GROUNDED:
+            emotion_bridge = "Notice how serene that feels when spoken out loud. "
+
         is_brief = len(user_msg_lower) > 0 and len(user_msg_lower) < 10 and not any(
             w in user_msg_lower for w in ["yes", "no", "ready", "okay", "sure"]
         )
@@ -82,59 +89,59 @@ class HeroBrain:
             # Stage 1: OPEN
             hero_response = (
                 f"Welcome, {self.user_name}. A few minutes to dream out loud about your 2027. "
-                "We are here as a mirror of your own potential. "
+                "We are here as a mirror of your own potential, holding this ceremonial space for you. "
                 "Tell us, what is the one thing from 2026 you're really proud of?"
             )
             next_stage = 2
 
         elif self.current_stage == 2:
-            # Stage 2: PRIDE 2026 (Savouring)
+            # Stage 2: PRIDE 2026 (Savouring & Emotional Grounding)
             if not user_msg_clean and self.context.get("pride2026"):
                 hero_response = (
                     f"{prefix}Looking at what you noted about 2026—\"{self.context['pride2026']}\"—"
-                    "let yourself really savour that. What did that feat teach you about your strength?"
+                    "let yourself really feel that feat. What did that experience reveal about the strength already inside you?"
                 )
             elif is_brief:
                 hero_response = (
-                    f"{prefix}Even a quiet moment counts. Take a breath with us. "
-                    "What is one thing, big or quiet, that you did in 2026 that made you feel proud?"
+                    f"{prefix}{emotion_bridge}Even a quiet, unspoken moment counts. "
+                    "What is one thing, big or subtle, that you did in 2026 that made your spirit feel proud?"
                 )
             else:
                 hero_response = (
-                    f"{prefix}Let yourself really feel that. That took genuine diligence. "
+                    f"{prefix}{emotion_bridge}That took real diligence and self-honouring. "
                     "Now, let's step across the threshold into 2027. "
-                    "What do you want to be deeply proud of in 2027?"
+                    "What do you want to be deeply, audaciously proud of in 2027?"
                 )
                 next_stage = 3
 
         elif self.current_stage == 3:
-            # Stage 3: THE 2027 PRIDE (Audacity gap & Day in the life)
+            # Stage 3: THE 2027 PRIDE (Audacity gap & Day-in-the-life)
             if is_brief:
                 hero_response = (
-                    f"{prefix}Don't hold back on the audacity. "
-                    "If nothing held you back, what does that 2027 victory feel like?"
+                    f"{prefix}{emotion_bridge}Don't hold back on the audacity. "
+                    "If nothing held you back, what does that 2027 freedom feel like?"
                 )
             else:
                 hero_response = (
-                    f"{prefix}And the version of you who has already won that... "
-                    "what does their morning look like? What are they doing when the sun comes up?"
+                    f"{prefix}{emotion_bridge}And the version of you who has already stepped into that victory... "
+                    "what does their morning look like? What are they doing with their hands when the sun comes up?"
                 )
                 next_stage = 4
 
         elif self.current_stage == 4:
             # Stage 4: THE CHARACTER AS A SCENE (Movie Scene & Naming)
             char_idea = self.context.get("characterNameIdea")
-            if not char_idea and "creator" not in user_msg_lower and "builder" not in user_msg_lower:
+            if not char_idea and "creator" not in user_msg_lower and "builder" not in user_msg_lower and "sovereign" not in user_msg_lower:
                 hero_response = (
-                    f"{prefix}Picture your 2027 like a movie. Which scene do you love most? "
-                    "What are you doing with your hands, and what do others see in your eyes? "
+                    f"{prefix}{emotion_bridge}Picture your 2027 like a scene in a cinematic film. "
+                    "Which scene do you love most? What are you doing, and what do others see in your eyes? "
                     "Let's name this character together."
                 )
             else:
                 char_name = char_idea or "The Sovereign Creator"
                 hero_response = (
-                    f"{prefix}That scene is so vivid. We see you as {char_name}. "
-                    "How does that name feel when you speak it out loud?"
+                    f"{prefix}{emotion_bridge}That scene is so vivid and alive. We see you as {char_name}. "
+                    "How does that name resonate when you speak it out loud?"
                 )
             next_stage = 5
 
@@ -143,25 +150,25 @@ class HeroBrain:
             past_story = self.context.get("pastGroundingStory")
             if past_story and not user_msg_clean:
                 hero_response = (
-                    f"{prefix}When you look back at when you pulled off \"{past_story}\", "
-                    "when have you already been this person, even for a moment?"
+                    f"{prefix}{emotion_bridge}When you look back at when you pulled off \"{past_story}\", "
+                    "when have you already been this person in your own life?"
                 )
             else:
                 hero_response = (
-                    f"{prefix}When have you already been this person in your own life? "
-                    "Give us one real story where you showed that same courage or diligence."
+                    f"{prefix}{emotion_bridge}When have you already embodied this person in your own life? "
+                    "Give us one real story where you showed that exact diligence or courage."
                 )
             next_stage = 6
 
         elif self.current_stage == 6:
-            # Stage 6: MIRROR (Summary of Idea, Character & Evidence + Intentional Pause)
-            qualities = self.context.get("coreQualities") or ["quiet intuition", "resilience", "unwavering focus"]
+            # Stage 6: MIRROR (Summary of Idea, Character & Evidence + Sacred Pause)
+            qualities = self.context.get("coreQualities") or ["quiet intuition", "resilience", "unwavering sovereignty"]
             qualities_str = ", ".join(qualities[:3])
             hero_response = (
-                f"{prefix}So this is someone you already are. "
+                f"{prefix}{emotion_bridge}So this is someone you already are. "
                 "The character who lives your 2027 isn't an imaginary stranger. "
                 f"You already carry that {qualities_str} in your bones. "
-                "Look at what you've walked through to get here."
+                "Look at what you have walked through to stand here today."
             )
             next_stage = 7
 
@@ -179,5 +186,6 @@ class HeroBrain:
             "current_stage": self.current_stage,
             "stage_name": STAGE_NAMES.get(self.current_stage, "UNKNOWN"),
             "is_finished": self.is_finished,
-            "was_interrupted": was_interrupted
+            "was_interrupted": was_interrupted,
+            "emotion": emotion_meta
         }
