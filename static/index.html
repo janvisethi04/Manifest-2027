@@ -577,6 +577,7 @@
     let utteranceStartTime = 0;
     let speechDebounceTimer = null;
     let accumulatedTranscript = "";
+    let currentSessionId = "sess_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
 
     const stageNames = {
       1: "1. Welcome Ritual",
@@ -736,7 +737,40 @@
     }
 
     async function startCall() {
-      // 1. Explicitly prompt user for microphone permission with Echo Cancellation
+      // 1. Reset state completely for a fresh, isolated ceremony session
+      currentSessionId = "sess_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
+      currentStage = 1;
+      context.user_name = "";
+      const varInput = document.getElementById("varName");
+      if (varInput) varInput.value = "";
+      
+      // Clean dialogue stream
+      const container = document.getElementById("dialogueContainer");
+      if (container) {
+        container.innerHTML = `
+          <div id="welcomeIntro" class="bg-gradient-to-br from-white/95 to-slate-50/90 border border-slate-200/90 rounded-2xl p-6 text-center space-y-3.5 shadow-sm">
+            <div class="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-tr from-cyan-400/20 via-blue-500/20 to-purple-600/20 border border-cyan-400/30 flex items-center justify-center text-cyan-600 font-outfit text-xl shadow-inner">
+              ✦
+            </div>
+            <div>
+              <h2 class="font-outfit text-base font-bold text-slate-800 tracking-tight">The 2027 Mirror Call</h2>
+              <p class="text-xs text-slate-500 leading-relaxed max-w-md mx-auto mt-1">
+                A conscious, empathetic space. Hero detects your vocal cadence, micro-hesitations, and 15-spectrum emotional shifts in real-time.
+              </p>
+            </div>
+          </div>
+        `;
+      }
+      
+      // Reset manifestation board UI
+      document.getElementById("boardCharacterName").innerText = "The Sovereign Creator";
+      document.getElementById("boardMovieScene").innerText = '"Picture your 2027 like a scene in a film..."';
+      document.getElementById("boardPride2026").innerText = "Awaiting your reflection...";
+      document.getElementById("boardPride2027").innerText = "Awaiting your audacity...";
+      document.getElementById("boardGroundingProof").innerText = '"So this is someone you already are. Evidence from your own life that this character is already in you."';
+      updateStageUI(1);
+
+      // 2. Explicitly prompt user for microphone permission with Echo Cancellation
       try {
         if (!window.micStream) {
           window.micStream = await navigator.mediaDevices.getUserMedia({
@@ -772,6 +806,15 @@
       isCallActive = false;
       stopAudio();
       stopRecognitionSafe();
+
+      // Wipe server session memory for this call
+      try {
+        fetch("/api/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: currentSessionId })
+        }).catch(() => {});
+      } catch (e) {}
 
       const btn = document.getElementById("callButton");
       btn.className = "flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
@@ -833,6 +876,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            session_id: currentSessionId,
             user_message: userMessage,
             was_interrupted: wasInterrupted,
             current_stage: currentStage,
@@ -843,6 +887,9 @@
         });
 
         const data = await resp.json();
+        if (data.session_id) {
+          currentSessionId = data.session_id;
+        }
         currentStage = data.current_stage;
         updateStageUI(currentStage);
 

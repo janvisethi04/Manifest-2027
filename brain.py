@@ -114,18 +114,38 @@ class HeroBrain:
         self.prosody_engine = ProsodyEngine()
         self.arc_engine = EmotionalArcEngine()
 
-    @staticmethod
-    def _extract_name(text: str) -> str:
-        """Extract a clean human name from speech/text input."""
+    COMMON_GREETINGS = {
+        "hi", "hello", "hey", "namaste", "hola", "yo", "sup", "greetings", 
+        "good morning", "good evening", "good afternoon", "nothing", "kuch nahi",
+        "who are you", "what is this", "yes", "yeah", "no", "hie", "heyy", "hii", 
+        "ha", "haan", "sure", "ok", "okay", "fine", "cool", "listening"
+    }
+
+    @classmethod
+    def _extract_name(cls, text: str) -> Optional[str]:
+        """Extract a valid human name from speech/text input. Returns None if input is just a greeting or evasion."""
         cleaned = text.strip().rstrip(".!?,")
-        match = re.search(r"(?:my name is|i am|i'm|this is|call me|myself)\s+([A-Za-z\s]+)", cleaned, re.IGNORECASE)
+        if not cleaned:
+            return None
+
+        # Check explicit patterns: "my name is X", "i am X", "this is X", "call me X", "myself X"
+        match = re.search(r"(?:my name is|i am|i'm|this is|call me|myself|naam hai|mera naam)\s+([A-Za-z\s]+)", cleaned, re.IGNORECASE)
         if match:
             candidate = match.group(1).strip()
         else:
-            words = [w for w in cleaned.split() if w.lower() not in ["hi", "hello", "hey", "yes", "yeah", "here", "it's", "its"]]
-            candidate = " ".join(words) if words else cleaned
+            cleaned_lower = cleaned.lower()
+            if cleaned_lower in cls.COMMON_GREETINGS:
+                return None
+            words = [w for w in cleaned.split() if w.lower() not in cls.COMMON_GREETINGS and w.lower() not in ["it's", "its", "here", "friend"]]
+            if not words:
+                return None
+            candidate = " ".join(words)
+
         candidate = re.sub(r"[^A-Za-z\s\-]", "", candidate).strip()
-        return candidate.title() if candidate else "friend"
+        if not candidate or candidate.lower() in cls.COMMON_GREETINGS or len(candidate) > 30:
+            return None
+
+        return candidate.title()
 
     def _parse_claude_response(self, raw_text: str) -> Tuple[str, bool, Optional[str], Optional[str]]:
         """Parse structured response from Claude or fallback to raw text."""
@@ -266,8 +286,9 @@ CAPTURED_VALUE: <extracted value or NONE>
             hesitation_bridge = "We felt that quiet hesitation... Take an easy breath. "
 
         if self.current_stage == 1:
-            if not self.user_name and user_msg:
-                self.user_name = self._extract_name(user_msg)
+            extracted = self._extract_name(user_msg)
+            if not self.user_name and extracted:
+                self.user_name = extracted
                 self.manifestation_data["user_name"] = self.user_name
                 return (
                     f"{prefix}Wonderful to have you with us, {self.user_name}. Let's dive in: "
@@ -275,9 +296,9 @@ CAPTURED_VALUE: <extracted value or NONE>
                     True
                 )
             elif not self.user_name:
+                greeting_word = "Hello" if "hello" in user_msg.lower() else ("Hey there" if "hey" in user_msg.lower() else "Welcome")
                 return (
-                    f"{prefix}Welcome. A few minutes to dream out loud about your 2027. "
-                    "Before we begin, who are we speaking with today?",
+                    f"{prefix}{greeting_word}! Before we dive into dreaming about your 2027, who are we speaking with today?",
                     False
                 )
             else:
@@ -390,13 +411,22 @@ CAPTURED_VALUE: <extracted value or NONE>
                 )
                 self.current_stage = 1
             elif not self.user_name and user_msg_clean:
-                self.user_name = self._extract_name(user_msg_clean)
-                self.manifestation_data["user_name"] = self.user_name
-                hero_response = (
-                    f"Wonderful to have you with us, {self.user_name}. Let's dive in: "
-                    "looking back at 2026, what's one thing from that year you're really proud of, big or quiet?"
-                )
-                self.current_stage = 2
+                extracted_name = self._extract_name(user_msg_clean)
+                if extracted_name:
+                    self.user_name = extracted_name
+                    self.manifestation_data["user_name"] = self.user_name
+                    hero_response = (
+                        f"Wonderful to have you with us, {self.user_name}. Let's dive in: "
+                        "looking back at 2026, what's one thing from that year you're really proud of, big or quiet?"
+                    )
+                    self.current_stage = 2
+                else:
+                    # User greeted with "hi", "hey", or didn't provide a real name yet
+                    greeting_word = "Hello" if "hello" in user_msg_clean.lower() else ("Hey there" if "hey" in user_msg_clean.lower() else "Welcome")
+                    hero_response = (
+                        f"{greeting_word}! Before we step into 2027, who are we speaking with today?"
+                    )
+                    self.current_stage = 1
             else:
                 name_greeting = f", {self.user_name}" if self.user_name else ""
                 hero_response = (

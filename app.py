@@ -37,7 +37,7 @@ class ChatRequest(BaseModel):
     voice: Optional[str] = DEFAULT_VOICE
     context: Optional[Dict[str, Any]] = None
     audio_duration_sec: Optional[float] = 0.0
-    session_id: Optional[str] = "default"
+    session_id: Optional[str] = None
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_agent_ui():
@@ -48,13 +48,31 @@ async def serve_agent_ui():
             return HTMLResponse(content=f.read())
     return HTMLResponse("<h1>Voice Agent UI file not found</h1>", status_code=404)
 
+@app.post("/api/reset")
+async def reset_session(request: Request):
+    """Explicitly wipe session memory for fresh user ceremony."""
+    try:
+        body = await request.json()
+        sess_id = body.get("session_id")
+        if sess_id and sess_id in SESSION_STORE:
+            del SESSION_STORE[sess_id]
+    except Exception:
+        pass
+    return JSONResponse({"success": True, "message": "Session reset cleanly"})
+
 @app.post("/api/chat")
 async def process_chat_turn(req: ChatRequest):
-    """Process conversation turn with full persistent session sentiment, prosody & emotional arc awareness."""
-    sess_id = req.session_id or "default"
+    """Process conversation turn with full isolated per-user session memory."""
+    import uuid
+    sess_id = req.session_id
+    if not sess_id or sess_id.strip() in ["", "default"]:
+        sess_id = f"sess_{uuid.uuid4().hex[:12]}"
     
-    # Maintain stateful session brain
-    if req.current_stage == 1 or sess_id not in SESSION_STORE:
+    # Isolate session: if starting at stage 1 without an explicit user name, generate fresh brain
+    if req.current_stage == 1 and not (req.context and req.context.get("user_name")):
+        brain = HeroBrain(context=req.context or {})
+        SESSION_STORE[sess_id] = brain
+    elif sess_id not in SESSION_STORE:
         brain = HeroBrain(context=req.context or {})
         SESSION_STORE[sess_id] = brain
     else:
@@ -72,6 +90,7 @@ async def process_chat_turn(req: ChatRequest):
     
     return JSONResponse({
         "success": True,
+        "session_id": sess_id,
         "hero_response": turn_result["hero_response"],
         "current_stage": turn_result["current_stage"],
         "stage_name": turn_result["stage_name"],
