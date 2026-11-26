@@ -982,8 +982,11 @@
       document.getElementById("callButtonText").innerText = "End Ceremony";
 
       hideIntro();
-      setCoreState("core-listening");
-      updateStatus("Hero is listening... (Speak freely)", "emerald");
+      setCoreState("core-idle");
+      updateStatus("Connecting to Hero...", "purple");
+
+      // Fire Stage 1 greeting IMMEDIATELY while warming up STT/mic in parallel
+      const greetingPromise = sendTurn("", false, 0.0);
 
       try {
         const sttResp = await fetch("/api/stt/status");
@@ -994,14 +997,12 @@
       }
 
       if (whisperEnabled) {
-        // Warm up mic permission immediately; recording starts when Hero finishes greeting
         await initWhisperVAD();
       } else {
         initSpeechRecognition();
-        startRecognitionSafe();
       }
 
-      sendTurn("", false, 0.0);
+      await greetingPromise;
     }
 
     function endCall() {
