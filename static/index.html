@@ -867,7 +867,7 @@
       document.getElementById("callButtonText").innerText = "Start Voice Mirror";
 
       setCoreState("core-idle");
-      updateStatus("Ceremony Paused", "slate");
+      updateStatus(isCeremonyFinished ? "Ceremony Complete ✦" : "Ceremony Paused", isCeremonyFinished ? "emerald" : "slate");
     }
 
     function toggleMute() {
@@ -1001,7 +1001,6 @@
         if (data.is_finished) {
           isCeremonyFinished = true;
           stopRecognitionSafe();
-          setTimeout(() => endCall(), 6500);
         }
 
       } catch (err) {
@@ -1119,7 +1118,9 @@
           isHeroSpeaking = false;
           isTurnInFlight = false;
           accumulatedTranscript = "";
-          if (isCallActive) {
+          if (isCeremonyFinished) {
+            endCall();
+          } else if (isCallActive) {
             setCoreState("core-listening");
             updateStatus("Hero is listening... (Speak freely)", "emerald");
             utteranceStartTime = Date.now();
