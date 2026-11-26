@@ -158,9 +158,15 @@ class HeroBrain:
             return None
 
         # Check explicit patterns: "my name is X", "i am X", "this is X", "call me X", "myself X"
-        match = re.search(r"(?:my name is|i am|i'm|this is|call me|myself|naam hai|mera naam)\s+([A-Za-z\s]+)", cleaned, re.IGNORECASE)
+        match = re.search(r"(?:my name is|i am|i'm|this is|call me|myself|naam hai|mera naam)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", cleaned, re.IGNORECASE)
         if match:
-            candidate = match.group(1).strip()
+            # Stop before any question/non-name words (e.g. "my name is Imansu who are you")
+            name_parts = []
+            for w in match.group(1).strip().split():
+                if w.lower() in cls.NON_NAME_WORDS or w.lower() in cls.COMMON_GREETINGS:
+                    break
+                name_parts.append(w)
+            candidate = " ".join(name_parts)
         else:
             cleaned_lower = cleaned.lower()
             if cleaned_lower in cls.COMMON_GREETINGS:
@@ -495,24 +501,40 @@ CAPTURED_VALUE: <short value|NONE>"""
                     if len(user_msg_clean.split()) > 2 or "?" in user_msg_clean:
                         claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
                         if claude_result and claude_result[0]:
-                            hero_response = claude_result[0]
+                            hero_response, adv, field, val = claude_result
                             source = "claude"
+                            if field == "user_name" and val and val.upper() != "NONE":
+                                self.user_name = val.strip().title()
+                                self.manifestation_data["user_name"] = self.user_name
+                            if adv:
+                                self.current_stage = 2
+                                if "?" not in hero_response:
+                                    hero_response = f"{hero_response.rstrip('.!')}. {STAGE_BRIDGE_QUESTIONS[2]}"
+                            else:
+                                self.current_stage = 1
+                                if "?" not in hero_response:
+                                    hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
                         else:
                             groq_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
                             if groq_result and groq_result[0]:
-                                hero_response = groq_result[0]
+                                hero_response, adv, field, val = groq_result
                                 source = "groq"
-                        if hero_response:
-                            if "?" not in hero_response:
-                                hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
-                        else:
-                            hero_response = f"Good question — we're here to dream out loud about your 2027! {STAGE_STAY_QUESTIONS[1]}"
+                                if field == "user_name" and val and val.upper() != "NONE":
+                                    self.user_name = val.strip().title()
+                                    self.manifestation_data["user_name"] = self.user_name
+                                if adv:
+                                    self.current_stage = 2
+                                else:
+                                    self.current_stage = 1
+                            else:
+                                hero_response = f"Good question — we're here to dream out loud about your 2027! {STAGE_STAY_QUESTIONS[1]}"
+                                self.current_stage = 1
                     else:
                         greeting_word = "Hello" if "hello" in user_msg_clean.lower() else ("Hey there" if "hey" in user_msg_clean.lower() else "Welcome")
                         hero_response = (
                             f"{greeting_word}! Before we step into 2027, who are we speaking with today?"
                         )
-                    self.current_stage = 1
+                        self.current_stage = 1
             else:
                 name_greeting = f", {self.user_name}" if self.user_name else ""
                 hero_response = (
