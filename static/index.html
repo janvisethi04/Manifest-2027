@@ -832,8 +832,8 @@
       recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      // en-IN dramatically improves Indian English & Hinglish word accuracy
-      recognition.lang = 'en-IN';
+      // en-US provides the cleanest English vocabulary accuracy in Chrome
+      recognition.lang = 'en-US';
 
       recognition.onstart = () => {
         isRecognitionStarting = false;
