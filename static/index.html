@@ -867,21 +867,19 @@
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const item = event.results[i];
           if (item.isFinal) {
-            finalTranscript += item[0].transcript;
+            finalTranscript += " " + item[0].transcript;
           } else {
-            interimTranscript += item[0].transcript;
+            interimTranscript += " " + item[0].transcript;
           }
         }
 
         const chatInput = document.getElementById("chatInput");
 
-        // Always accumulate final results — these are locked-in words
+        // Always accumulate final results AND keep latest interim words
         if (finalTranscript.trim()) {
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
-          lastInterimTranscript = "";
-        } else {
-          lastInterimTranscript = interimTranscript.trim();
         }
+        lastInterimTranscript = interimTranscript.trim();
 
         // Show live preview of everything heard so far (final + interim)
         const currentText = (accumulatedTranscript + " " + interimTranscript).trim();
