@@ -809,6 +809,48 @@
       vadRafId = requestAnimationFrame(monitorVolume);
     }
 
+    const STT_DOMAIN_CORPUS = new Set([
+      "janvi", "sovereign", "calmly", "terrace", "sunlit", "fearlessly", "drained",
+      "delivered", "stayed", "set", "boundaries", "quiet", "ocean", "creator",
+      "architect", "manifest", "confident", "exhausted", "proud", "peace", "truth",
+      "alone", "scratch", "kuch", "nahi", "independent", "launched", "freedom"
+    ]);
+
+    function pickBestAlternative(result) {
+      if (!result || result.length <= 1) return result[0].transcript;
+      const top = result[0];
+      if ((top.confidence || 1) >= 0.85) return top.transcript;
+      let bestText = top.transcript;
+      let bestScore = -1;
+      for (let j = 0; j < result.length; j++) {
+        const alt = result[j];
+        const words = (alt.transcript || "").toLowerCase().match(/\b[a-z]+\b/g) || [];
+        const corpusHits = words.reduce((acc, w) => acc + (STT_DOMAIN_CORPUS.has(w) ? 1 : 0), 0);
+        const score = (alt.confidence || 0.5) + corpusHits * 0.25;
+        if (score > bestScore) {
+          bestScore = score;
+          bestText = alt.transcript;
+        }
+      }
+      return bestText;
+    }
+
+    function cleanSttTranscript(text) {
+      return text
+        .replace(/\bsaid boundaries\b/gi, "set boundaries")
+        .replace(/\bstate calm\b/gi, "stayed calm")
+        .replace(/\bdeliver it on time\b/gi, "delivered it on time")
+        .replace(/\bdream my energy\b/gi, "drained my energy")
+        .replace(/\b(sunlet|sun let)\b/gi, "sunlit")
+        .replace(/\bfelessly\b/gi, "fearlessly")
+        .replace(/\bquite (rooftop|ocean|cafe|morning|studio)\b/gi, "quiet $1")
+        .replace(/\bKamli\b/g, "calmly")
+        .replace(/\bsaw him\b/gi, "sovereign")
+        .replace(/\bhe am\b/gi, "hey I am")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -824,6 +866,7 @@
       recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
+      recognition.maxAlternatives = 3;
       // en-US provides the cleanest English vocabulary accuracy in Chrome
       recognition.lang = 'en-US';
 
@@ -846,15 +889,15 @@
         speechDebounceTimer = null;
       };
 
-      // onspeechend fires when the mic detects a pause. Wait 1600ms before sending so
-      // thoughtful/hesitant speakers who pause mid-sentence aren't cut off after 1 word.
+      // onspeechend fires when the mic detects a pause. Wait 1850ms so Chrome finishes
+      // its second-pass tense/punctuation update and thoughtful speakers aren't cut off.
       recognition.onspeechend = () => {
         if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
         clearTimeout(speechDebounceTimer);
         speechDebounceTimer = setTimeout(() => {
           if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
           const chatInput = document.getElementById("chatInput");
-          const textToSend = (accumulatedTranscript + " " + lastInterimTranscript).trim();
+          const textToSend = cleanSttTranscript(accumulatedTranscript + " " + lastInterimTranscript);
           // Ignore accidental speaker-tail noise or single punctuation/numbers without real words
           if (textToSend.length > 0 && /[a-zA-Z]{2,}/.test(textToSend)) {
             const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
@@ -864,7 +907,7 @@
             sendTurn(textToSend, false, durationSec);
             utteranceStartTime = Date.now();
           }
-        }, 1600);
+        }, 1850);
       };
 
       recognition.onresult = (event) => {
@@ -878,7 +921,7 @@
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const item = event.results[i];
           if (item.isFinal) {
-            finalTranscript += " " + item[0].transcript;
+            finalTranscript += " " + pickBestAlternative(item);
           } else {
             interimTranscript += " " + item[0].transcript;
           }
@@ -904,7 +947,7 @@
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
             if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
-            const textToSend = (accumulatedTranscript + " " + lastInterimTranscript).trim();
+            const textToSend = cleanSttTranscript(accumulatedTranscript + " " + lastInterimTranscript);
             if (textToSend.length > 0 && /[a-zA-Z]{2,}/.test(textToSend)) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
               accumulatedTranscript = "";
