@@ -14,7 +14,7 @@ import base64
 import asyncio
 import tempfile
 import webbrowser
-from collections import defaultdict, deque
+from collections import deque
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -30,41 +30,13 @@ from config import DEFAULT_VOICE, HINDI_VOICE, FEMALE_VOICE, USE_VPS_CLAUDE, GRO
 app = FastAPI(title="Manifest 2027 Voice Agent")
 
 APP_START_TIME = time.time()
-RATE_LIMIT_BUCKETS: Dict[str, deque] = defaultdict(deque)
 APP_METRICS: Dict[str, Any] = {
     "total_turns": 0,
     "source_counts": {"ceremonial": 0, "claude": 0, "groq": 0, "fallback": 0},
     "tts_errors": 0,
-    "rate_limited_requests": 0,
     "total_latency_ms": 0.0,
     "recent_errors": deque(maxlen=10),
 }
-
-
-def _get_client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
-def _check_rate_limit(request: Request, scope: str, max_requests: int = 30, window_sec: int = 60) -> Optional[JSONResponse]:
-    """Sliding-window per-IP rate limiter to protect LLM/TTS quotas."""
-    ip = _get_client_ip(request)
-    key = f"{scope}:{ip}"
-    now = time.time()
-    q = RATE_LIMIT_BUCKETS[key]
-    while q and now - q[0] > window_sec:
-        q.popleft()
-    if len(q) >= max_requests:
-        APP_METRICS["rate_limited_requests"] += 1
-        return JSONResponse(
-            {"success": False, "error": "Too many requests. Please wait a moment."},
-            status_code=429,
-            headers={"Retry-After": str(window_sec)},
-        )
-    q.append(now)
-    return None
 
 
 @app.middleware("http")
@@ -120,7 +92,6 @@ async def health_check():
             "avg_turn_latency_ms": avg_ms,
             "source_counts": APP_METRICS["source_counts"],
             "tts_errors": APP_METRICS["tts_errors"],
-            "rate_limited_requests": APP_METRICS["rate_limited_requests"],
         },
     })
 
@@ -134,7 +105,6 @@ async def get_metrics():
         "avg_turn_latency_ms": round(APP_METRICS["total_latency_ms"] / turns, 1) if turns > 0 else 0.0,
         "source_counts": APP_METRICS["source_counts"],
         "tts_errors": APP_METRICS["tts_errors"],
-        "rate_limited_requests": APP_METRICS["rate_limited_requests"],
         "recent_errors": list(APP_METRICS["recent_errors"]),
     })
 
@@ -163,9 +133,6 @@ async def stt_status():
 @app.post("/api/stt")
 async def transcribe_whisper(request: Request):
     """Transcribe recorded browser audio via Groq Whisper API (supports Indian English & Hinglish)."""
-    limited = _check_rate_limit(request, "stt", max_requests=30, window_sec=60)
-    if limited:
-        return limited
     if not GROQ_API_KEY:
         return JSONResponse({"success": False, "error": "GROQ_API_KEY not configured"}, status_code=503)
 
@@ -224,12 +191,8 @@ async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_
         return None
 
 @app.post("/api/chat")
-async def process_chat_turn(req: ChatRequest, request: Request):
+async def process_chat_turn(req: ChatRequest):
     """Process conversation turn with full isolated per-user session memory and inline TTS."""
-    limited = _check_rate_limit(request, "chat", max_requests=30, window_sec=60)
-    if limited:
-        return limited
-
     t0 = time.perf_counter()
     import uuid
     sess_id = req.session_id
@@ -300,16 +263,12 @@ async def process_chat_turn(req: ChatRequest, request: Request):
 
 @app.get("/api/tts")
 async def generate_tts(
-    request: Request,
     text: str, 
     voice: Optional[str] = DEFAULT_VOICE,
     rate: Optional[str] = "+0%",
     pitch: Optional[str] = "+0Hz"
 ):
     """Synthesize text into complete in-memory MP3 bytes with Content-Length to prevent browser cutoff."""
-    limited = _check_rate_limit(request, "tts", max_requests=45, window_sec=60)
-    if limited:
-        return limited
     if not text or not text.strip():
         return JSONResponse({"error": "Empty text"}, status_code=400)
     
