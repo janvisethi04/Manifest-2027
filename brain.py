@@ -492,10 +492,16 @@ CAPTURED_VALUE: <short value|NONE>"""
                 else:
                     # If user asked an out-of-context question on Stage 1 instead of giving a name, respond via Claude
                     if len(user_msg_clean.split()) > 2 or "?" in user_msg_clean:
-                        llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta) or self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
-                        if llm_result and llm_result[0]:
-                            hero_response = llm_result[0]
-                            source = "groq" if GROQ_API_KEY else "claude"
+                        claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+                        if claude_result and claude_result[0]:
+                            hero_response = claude_result[0]
+                            source = "claude"
+                        else:
+                            groq_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+                            if groq_result and groq_result[0]:
+                                hero_response = groq_result[0]
+                                source = "groq"
+                        if hero_response:
                             if "?" not in hero_response:
                                 hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
                         else:
@@ -521,24 +527,24 @@ CAPTURED_VALUE: <short value|NONE>"""
             self.current_stage = 7
 
         else:
-            # Query fast Groq Llama 3.3 70B first (if configured), fallback to VPS Claude
-            llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
-            if llm_result:
-                reply, adv, field, val = llm_result
+            # Query VPS Claude Sonnet first (best quality & lower latency than Qwen reasoning), fallback to Groq LLM
+            claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+            if claude_result:
+                reply, adv, field, val = claude_result
                 hero_response = reply
                 should_advance = adv
-                source = "groq"
+                source = "claude"
                 if field and val:
                     self.manifestation_data[field] = val
                     if field == "user_name":
                         self.user_name = val
             else:
-                claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
-                if claude_result:
-                    reply, adv, field, val = claude_result
+                llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+                if llm_result:
+                    reply, adv, field, val = llm_result
                     hero_response = reply
                     should_advance = adv
-                    source = "claude"
+                    source = "groq"
                     if field and val:
                         self.manifestation_data[field] = val
                         if field == "user_name":
