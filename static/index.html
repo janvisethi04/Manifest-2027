@@ -1020,8 +1020,10 @@
       updateStatus("Connecting to Hero...", "purple");
 
       // Use instant zero-latency Chrome en-IN Web Speech API
+      // Start recognition synchronously inside the user-click gesture so Chrome never blocks it
       whisperEnabled = false;
       initSpeechRecognition();
+      startRecognitionSafe();
 
       if (preloadedGreetingBlobUrl) {
         // Play preloaded Stage 1 greeting instantaneously (<50ms)
