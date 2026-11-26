@@ -19,9 +19,10 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Streamin
 from pydantic import BaseModel
 import uvicorn
 import edge_tts
+import aiohttp
 
 from brain import HeroBrain
-from config import DEFAULT_VOICE, HINDI_VOICE, FEMALE_VOICE
+from config import DEFAULT_VOICE, HINDI_VOICE, FEMALE_VOICE, GROQ_API_KEY, GROQ_WHISPER_MODEL
 
 app = FastAPI(title="Manifest 2027 Voice Agent")
 
@@ -61,6 +62,52 @@ async def reset_session(request: Request):
     except Exception:
         pass
     return JSONResponse({"success": True, "message": "Session reset cleanly"})
+
+@app.get("/api/stt/status")
+async def stt_status():
+    """Report whether server-side Groq Whisper STT is configured."""
+    return JSONResponse({
+        "whisper_enabled": bool(GROQ_API_KEY),
+        "provider": "groq-whisper" if GROQ_API_KEY else "web-speech-en-IN",
+        "model": GROQ_WHISPER_MODEL if GROQ_API_KEY else None
+    })
+
+@app.post("/api/stt")
+async def transcribe_whisper(request: Request):
+    """Transcribe recorded browser audio via Groq Whisper API (supports Indian English & Hinglish)."""
+    if not GROQ_API_KEY:
+        return JSONResponse({"success": False, "error": "GROQ_API_KEY not configured"}, status_code=503)
+
+    audio_bytes = await request.body()
+    if not audio_bytes or len(audio_bytes) < 800:
+        return JSONResponse({"success": True, "text": ""})
+
+    content_type = request.headers.get("content-type", "audio/webm")
+    ext = "mp4" if "mp4" in content_type else ("ogg" if "ogg" in content_type else "webm")
+
+    form = aiohttp.FormData()
+    form.add_field("file", audio_bytes, filename=f"speech.{ext}", content_type=content_type)
+    form.add_field("model", GROQ_WHISPER_MODEL)
+    form.add_field("response_format", "json")
+    form.add_field("prompt", "Manifest 2027, Janvi, The Sovereign, calmly, sunlit terrace, Hinglish, kuch nahi.")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+                data=form,
+                timeout=aiohttp.ClientTimeout(total=12.0)
+            ) as resp:
+                if resp.status != 200:
+                    err_txt = await resp.text()
+                    return JSONResponse({"success": False, "error": err_txt}, status_code=resp.status)
+                data = await resp.json()
+                text = (data.get("text") or "").strip()
+                return JSONResponse({"success": True, "text": text})
+    except Exception as e:
+        print(f"[Whisper STT Error] {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_val: str) -> Optional[bytes]:
     """Synthesize MP3 bytes with in-memory cache."""

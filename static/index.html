@@ -605,6 +605,15 @@
     let isCeremonyFinished = false;
     let lastInterimTranscript = "";
     let currentTurnAbortController = null;
+    let whisperEnabled = false;
+    let mediaStream = null;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let vadAudioCtx = null;
+    let vadRafId = null;
+    let vadHasSpeech = false;
+    let vadSilenceTimer = null;
+    let whisperRecordingStart = 0;
 
     function handleOrbClick() {
       if (!isCallActive) {
@@ -616,7 +625,11 @@
     }
 
     function startRecognitionSafe() {
-      if (!isCallActive || isMuted || isHeroSpeaking) return;
+      if (!isCallActive || isMuted || isHeroSpeaking || isCeremonyFinished) return;
+      if (whisperEnabled) {
+        startWhisperListening();
+        return;
+      }
       if (isRecognitionRunning || isRecognitionStarting) return;
       if (!recognition) initSpeechRecognition();
       if (!recognition) return;
@@ -637,12 +650,144 @@
         clearTimeout(restartTimer);
         restartTimer = null;
       }
+      if (vadSilenceTimer) {
+        clearTimeout(vadSilenceTimer);
+        vadSilenceTimer = null;
+      }
+      if (vadRafId) {
+        cancelAnimationFrame(vadRafId);
+        vadRafId = null;
+      }
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        try { mediaRecorder.stop(); } catch (e) {}
+      }
       isRecognitionStarting = false;
-      if (!recognition) return;
-      try {
-        recognition.stop();
-      } catch (e) {}
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
       isRecognitionRunning = false;
+    }
+
+    async function initWhisperVAD() {
+      if (mediaStream) return true;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+        vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = vadAudioCtx.createMediaStreamSource(mediaStream);
+        const analyser = vadAudioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        source.connect(analyser);
+        vadAudioCtx._analyser = analyser;
+        return true;
+      } catch (e) {
+        console.warn("Whisper mic fallback to WebSpeech:", e);
+        whisperEnabled = false;
+        return false;
+      }
+    }
+
+    function stopWhisperStream() {
+      stopRecognitionSafe();
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      if (vadAudioCtx) {
+        try { vadAudioCtx.close(); } catch (e) {}
+        vadAudioCtx = null;
+      }
+    }
+
+    async function startWhisperListening() {
+      if (!isCallActive || isMuted || isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+      const ok = await initWhisperVAD();
+      if (!ok) {
+        initSpeechRecognition();
+        startRecognitionSafe();
+        return;
+      }
+
+      if (mediaRecorder && mediaRecorder.state === "recording") return;
+      audioChunks = [];
+      vadHasSpeech = false;
+      whisperRecordingStart = Date.now();
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "audio/webm");
+
+      mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      };
+      mediaRecorder.onstop = async () => {
+        if (!isCallActive || isCeremonyFinished || !vadHasSpeech || audioChunks.length === 0) return;
+        const blob = new Blob(audioChunks, { type: mimeType });
+        audioChunks = [];
+        if (blob.size < 1200) return;
+
+        const durationSec = Math.max(0.5, (Date.now() - whisperRecordingStart) / 1000);
+        updateStatus("Transcribing with Whisper...", "cyan");
+        try {
+          const resp = await fetch("/api/stt", {
+            method: "POST",
+            headers: { "Content-Type": mimeType },
+            body: blob
+          });
+          const data = await resp.json();
+          const text = (data.text || "").trim();
+          if (text && isCallActive && !isCeremonyFinished) {
+            sendTurn(text, false, durationSec);
+          } else if (isCallActive && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) {
+            startWhisperListening();
+          }
+        } catch (err) {
+          console.warn("Whisper STT request error:", err);
+          if (isCallActive && !isHeroSpeaking && !isTurnInFlight) startWhisperListening();
+        }
+      };
+
+      mediaRecorder.start(250);
+      setCoreState("core-listening");
+      updateStatus("Hero is listening (Whisper HD)... (Speak freely)", "emerald");
+
+      const analyser = vadAudioCtx._analyser;
+      const buf = new Uint8Array(analyser.fftSize);
+      const monitorVolume = () => {
+        if (!isCallActive || isMuted || isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !mediaRecorder || mediaRecorder.state !== "recording") {
+          return;
+        }
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / buf.length);
+
+        if (rms > 0.022) {
+          if (!vadHasSpeech) {
+            vadHasSpeech = true;
+            utteranceStartTime = Date.now();
+            updateStatus("Hearing your voice (Whisper HD)...", "cyan");
+          }
+          if (vadSilenceTimer) {
+            clearTimeout(vadSilenceTimer);
+            vadSilenceTimer = null;
+          }
+        } else if (vadHasSpeech && !vadSilenceTimer) {
+          vadSilenceTimer = setTimeout(() => {
+            vadSilenceTimer = null;
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+              mediaRecorder.stop();
+            }
+          }, 1200);
+        }
+        vadRafId = requestAnimationFrame(monitorVolume);
+      };
+      vadRafId = requestAnimationFrame(monitorVolume);
     }
 
     function initSpeechRecognition() {
@@ -660,8 +805,8 @@
       recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      // en-US has maximum browser stability and flawless accent handling
-      recognition.lang = 'en-US';
+      // en-IN dramatically improves Indian English & Hinglish word accuracy
+      recognition.lang = 'en-IN';
 
       recognition.onstart = () => {
         isRecognitionStarting = false;
@@ -830,7 +975,17 @@
       setCoreState("core-listening");
       updateStatus("Hero is listening... (Speak freely)", "emerald");
 
-      initSpeechRecognition();
+      try {
+        const sttResp = await fetch("/api/stt/status");
+        const sttData = await sttResp.json();
+        whisperEnabled = Boolean(sttData.whisper_enabled);
+      } catch (e) {
+        whisperEnabled = false;
+      }
+
+      if (!whisperEnabled) {
+        initSpeechRecognition();
+      }
       startRecognitionSafe();
 
       sendTurn("", false, 0.0);
@@ -850,7 +1005,7 @@
         currentTurnAbortController = null;
       }
       stopAudio();
-      stopRecognitionSafe();
+      stopWhisperStream();
 
       // Wipe server session memory for this call
       try {
