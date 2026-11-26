@@ -324,13 +324,18 @@
           <span id="muteLabel">Mute</span>
         </button>
 
-        <!-- Master Voice Connection Action (Clean, Modern Pill Button) -->
-        <button id="callButton" onclick="toggleCall()" class="flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none">
-          <svg id="phoneIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-          </svg>
-          <span id="callButtonText">Start Voice Mirror</span>
-        </button>
+        <!-- Master Voice Connection Action + Close Button -->
+        <div class="flex items-center space-x-1.5">
+          <button id="callButton" onclick="toggleCall()" class="flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none">
+            <svg id="phoneIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+            </svg>
+            <span id="callButtonText">Start Voice Mirror</span>
+          </button>
+          <button id="closeCallBtn" onclick="closeCeremony()" title="Close & Reset Ceremony" class="hidden items-center justify-center bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 p-2.5 rounded-xl transition focus:outline-none">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.3" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
 
         <!-- Live Prosody Cadence Pill -->
         <div class="flex items-center space-x-1 bg-slate-100 px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-slate-600">
@@ -605,6 +610,7 @@
     let lastHeroSpeechEndedAt = 0;
     let restartTimer = null;
     let isCeremonyFinished = false;
+    let isSessionPaused = false;
     let lastInterimTranscript = "";
     let currentTurnAbortController = null;
     let whisperEnabled = false;
@@ -982,8 +988,33 @@
     });
 
     function toggleCall() {
-      if (!isCallActive) startCall();
-      else endCall();
+      if (isCallActive) {
+        pauseCall();
+      } else if (isSessionPaused && !isCeremonyFinished) {
+        resumeCall();
+      } else {
+        startCall();
+      }
+    }
+
+    function setCallButtonActive() {
+      const btn = document.getElementById("callButton");
+      btn.className = "flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:opacity-95 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-amber-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
+      document.getElementById("phoneIcon").innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 9v6m4-6v6"/>';
+      document.getElementById("callButtonText").innerText = "Pause";
+      const closeBtn = document.getElementById("closeCallBtn");
+      if (closeBtn) closeBtn.classList.remove("hidden"), closeBtn.classList.add("flex");
+    }
+
+    function resumeCall() {
+      isCallActive = true;
+      isSessionPaused = false;
+      setCallButtonActive();
+      setCoreState("core-listening");
+      updateStatus("Hero is listening... (Speak freely)", "emerald");
+      utteranceStartTime = Date.now();
+      initSpeechRecognition();
+      startRecognitionSafe();
     }
 
     async function startCall() {
@@ -1014,6 +1045,7 @@
       
       // Reset manifestation board UI
       isCeremonyFinished = false;
+      isSessionPaused = false;
       document.getElementById("boardCharacterName").innerText = "The Sovereign Creator";
       document.getElementById("boardMovieScene").innerText = '"Picture your 2027 like a scene in a film..."';
       document.getElementById("boardPride2026").innerText = "Awaiting your reflection...";
@@ -1022,10 +1054,8 @@
       updateStageUI(1);
 
       isCallActive = true;
-      const btn = document.getElementById("callButton");
-      btn.className = "flex items-center space-x-2 bg-gradient-to-r from-rose-500 to-rose-600 hover:opacity-95 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-rose-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
-      document.getElementById("phoneIcon").innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>';
-      document.getElementById("callButtonText").innerText = "End Ceremony";
+      isSessionPaused = false;
+      setCallButtonActive();
 
       hideIntro();
       setCoreState("core-idle");
@@ -1047,8 +1077,39 @@
       }
     }
 
+    function pauseCall() {
+      isCallActive = false;
+      isSessionPaused = true;
+      isTurnInFlight = false;
+      accumulatedTranscript = "";
+      lastInterimTranscript = "";
+      if (speechDebounceTimer) {
+        clearTimeout(speechDebounceTimer);
+        speechDebounceTimer = null;
+      }
+      if (currentTurnAbortController) {
+        try { currentTurnAbortController.abort(); } catch (e) {}
+        currentTurnAbortController = null;
+      }
+      stopAudio();
+      stopWhisperStream();
+
+      const btn = document.getElementById("callButton");
+      btn.className = "flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
+      document.getElementById("phoneIcon").innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>';
+      document.getElementById("callButtonText").innerText = "Resume Voice Mirror";
+
+      setCoreState("core-idle");
+      updateStatus("Ceremony Paused", "slate");
+    }
+
+    function closeCeremony() {
+      endCall();
+    }
+
     function endCall() {
       isCallActive = false;
+      isSessionPaused = false;
       isTurnInFlight = false;
       accumulatedTranscript = "";
       lastInterimTranscript = "";
@@ -1073,12 +1134,15 @@
       } catch (e) {}
 
       const btn = document.getElementById("callButton");
-      btn.className = "flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
+      btn.className = "flex items-center space-x-2 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:opacity-95 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition transform hover:scale-[1.02] active:scale-95 focus:outline-none";
       document.getElementById("phoneIcon").innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>';
       document.getElementById("callButtonText").innerText = "Start Voice Mirror";
 
+      const closeBtn = document.getElementById("closeCallBtn");
+      if (closeBtn) closeBtn.classList.add("hidden"), closeBtn.classList.remove("flex");
+
       setCoreState("core-idle");
-      updateStatus(isCeremonyFinished ? "Ceremony Complete ✦" : "Ceremony Paused", isCeremonyFinished ? "emerald" : "slate");
+      updateStatus(isCeremonyFinished ? "Ceremony Complete ✦" : "Ceremony Closed", isCeremonyFinished ? "emerald" : "slate");
     }
 
     function toggleMute() {
