@@ -602,6 +602,7 @@
     let isRecognitionRunning = false;
     let isRecognitionStarting = false;
     let recognitionStartTimestamp = 0;
+    let lastHeroSpeechEndedAt = 0;
     let restartTimer = null;
     let isCeremonyFinished = false;
     let lastInterimTranscript = "";
@@ -855,7 +856,8 @@
           if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
           const chatInput = document.getElementById("chatInput");
           const textToSend = (accumulatedTranscript + " " + lastInterimTranscript).trim();
-          if (textToSend.length > 0) {
+          // Ignore accidental speaker-tail noise or single punctuation/numbers without real words
+          if (textToSend.length > 0 && /[a-zA-Z]{2,}/.test(textToSend)) {
             const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
             accumulatedTranscript = "";
             lastInterimTranscript = "";
@@ -867,8 +869,9 @@
       };
 
       recognition.onresult = (event) => {
-        // Discard microphone input while Hero is speaking, turn in flight, or ceremony is over
+        // Discard microphone input while Hero is speaking, within 500ms of speaker tail, turn in flight, or ceremony is over
         if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
+        if (Date.now() - lastHeroSpeechEndedAt < 500) return;
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -903,7 +906,7 @@
           speechDebounceTimer = setTimeout(() => {
             if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
             const textToSend = (accumulatedTranscript + " " + lastInterimTranscript).trim();
-            if (textToSend.length > 0) {
+            if (textToSend.length > 0 && /[a-zA-Z]{2,}/.test(textToSend)) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
               accumulatedTranscript = "";
               lastInterimTranscript = "";
@@ -1316,6 +1319,7 @@
           revealMessage();
           isHeroSpeaking = false;
           isTurnInFlight = false;
+          lastHeroSpeechEndedAt = Date.now();
           accumulatedTranscript = "";
           lastInterimTranscript = "";
           if (speechDebounceTimer) {
