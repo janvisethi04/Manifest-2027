@@ -41,9 +41,9 @@ STAGE_GOALS = {
     1: "Warmly open with a light ritual: 'A few minutes to dream out loud about your 2027.' Ask who you are speaking with. Once they give their name, welcome them by name and ask for 2026 pride.",
     2: "PRIDE 2026: Savor one real feat, choice, or endurance from 2026. If they say 'nothing' or had a hard year, meet them with deep empathy and uncover even one quiet win. Do not advance until they share something real.",
     3: "THE 2027 PRIDE: What do they want to be audaciously proud of in 2027? Nudge them to picture the version of them who won it. Do not advance until they name their 2027 vision.",
-    4: "THE CHARACTER AS A SCENE: Picture 2027 like a movie. What scene do they love most? Name the character together. Do not advance until the scene and character archetype are clear.",
+    4: "THE CHARACTER AS A SCENE: Picture 2027 like a movie. What scene do they love most, and what do they call the character? If BOTH scene and character are already shared (even across turns), set ADVANCE_STAGE: YES.",
     5: "GROUNDING: Dig for real past evidence when they already embodied this person. Conclude with: 'So this is someone you already are.' Do not advance without real past proof.",
-    6: "MIRROR CLIMAX: Sum up the idea, the character, and their own evidence in their exact words. Pause and let the revelation land.",
+    6: "MIRROR CLIMAX: Once user affirms/resonates ('yes', 'yeah', 'I feel that', 'this is it', 'true', 'done'), IMMEDIATELY set ADVANCE_STAGE: YES so the ceremony closes. Never ask new grounding questions on Stage 6.",
     7: "CLOSE: Exact ceremonial ending: 'Consider your manifestation ready. We\\'ll come back to you within the next 15 days with a surprise.'"
 }
 
@@ -237,8 +237,16 @@ class HeroBrain:
         next_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage + 1, "")
         next_q_hint = f'If advancing, end with: "{next_q}"' if next_q else ""
 
+        captured_parts = []
+        for k in ("pride_2026", "pride_2027", "movie_scene", "character_name", "grounding_story"):
+            v = self.manifestation_data.get(k)
+            if v:
+                captured_parts.append(f"{k}={v[:80]}")
+        captured_str = " | ".join(captured_parts) if captured_parts else "None yet"
+
         return f"""You are Hero, a deeply warm, attentive human mirror for Manifest 2027 (like an intimate voice companion, never a bot or survey). Speak as "we" in 1-2 short spoken sentences.
 User: {self.user_name or 'Friend'} | Stage {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')}): {STAGE_GOALS.get(self.current_stage, '')}
+Captured so far: {captured_str}
 Emotion: {emotion_meta.get('label', 'Reflective')}
 History:
 {history_str}
@@ -577,6 +585,14 @@ CAPTURED_VALUE: <short value|NONE>"""
                     # Intelligent Fallback
                     hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
                     source = "fallback"
+
+            # Deterministic Stage 6 Mirror -> Close safety net on user affirmation
+            if self.current_stage == 6 and not should_advance:
+                msg_l = user_msg_clean.lower()
+                affirm_words = {"yes", "yeah", "yep", "true", "haan", "ha", "ji", "done", "finish"}
+                affirm_phrases = ["feel that", "this is it", "feels true", "so true", "completely true", "resonates", "hits home", "finish it"]
+                if (set(re.findall(r"\b[a-z]+\b", msg_l)) & affirm_words) or any(p in msg_l for p in affirm_phrases):
+                    should_advance = True
 
             # Advance stage only if the goal was genuinely unlocked
             if should_advance:
