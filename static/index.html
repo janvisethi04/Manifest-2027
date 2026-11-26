@@ -942,12 +942,16 @@
       recognition.onend = () => {
         isRecognitionRunning = false;
         isRecognitionStarting = false;
-        // Keep microphone permanently warm throughout the active call
-        // (onresult already discards input while Hero is speaking)
-        if (isCallActive && !isMuted && !isCeremonyFinished) {
+        // Only auto-restart when Hero is NOT speaking (playSpeech handles restart on audio.onended)
+        if (isCallActive && !isMuted && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) {
           if (restartTimer) clearTimeout(restartTimer);
           restartTimer = setTimeout(() => {
-            startRecognitionSafe();
+            if (isCallActive && !isMuted && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) {
+              // Fresh SpeechRecognition instance prevents Chrome's Turn-3+ silent freeze
+              recognition = null;
+              initSpeechRecognition();
+              startRecognitionSafe();
+            }
           }, 250);
         }
       };
@@ -1107,6 +1111,10 @@
     }
 
     function stopAudio() {
+      if (audioSafetyTimer) {
+        clearTimeout(audioSafetyTimer);
+        audioSafetyTimer = null;
+      }
       if (currentAudio) {
         currentAudio.pause();
         currentAudio.currentTime = 0;
@@ -1299,8 +1307,11 @@
       }
     }
 
+    let audioSafetyTimer = null;
+
     async function playSpeech(text, onPlayCallback = null, audioBase64 = null, directAudioUrl = null) {
       stopAudio();
+      stopRecognitionSafe();
       isHeroSpeaking = true;
       setCoreState("core-speaking");
       updateStatus("Hero is speaking...", "purple");
@@ -1325,7 +1336,11 @@
           revealMessage();
         };
 
-        currentAudio.onended = () => {
+        const finishHeroTurn = () => {
+          if (audioSafetyTimer) {
+            clearTimeout(audioSafetyTimer);
+            audioSafetyTimer = null;
+          }
           revealMessage();
           isHeroSpeaking = false;
           isTurnInFlight = false;
@@ -1342,20 +1357,28 @@
             setCoreState("core-listening");
             updateStatus("Hero is listening... (Speak freely)", "emerald");
             utteranceStartTime = Date.now();
-            startRecognitionSafe();
-            // Watchdog: if Chrome still isn't running after 600ms, recreate instance
+            // Always start a fresh SpeechRecognition instance after Hero finishes speaking
             setTimeout(() => {
-              if (isCallActive && !isMuted && !isHeroSpeaking && !isCeremonyFinished && !isRecognitionRunning && !isRecognitionStarting) {
+              if (isCallActive && !isMuted && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) {
                 recognition = null;
                 initSpeechRecognition();
                 startRecognitionSafe();
               }
-            }, 600);
+            }, 200);
           } else {
             setCoreState("core-idle");
             updateStatus("Ready", "slate");
           }
         };
+
+        currentAudio.onended = finishHeroTurn;
+        // Safety fallback in case browser ever drops onended event
+        audioSafetyTimer = setTimeout(() => {
+          if (isHeroSpeaking) {
+            console.warn("Audio safety timeout triggered, unlocking mic.");
+            finishHeroTurn();
+          }
+        }, 25000);
 
         currentAudio.onerror = (e) => {
           console.warn("Audio playback error:", e);
