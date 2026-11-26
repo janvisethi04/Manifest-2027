@@ -658,6 +658,7 @@
         cancelAnimationFrame(vadRafId);
         vadRafId = null;
       }
+      vadHasSpeech = false;
       if (mediaRecorder && mediaRecorder.state === "recording") {
         try { mediaRecorder.stop(); } catch (e) {}
       }
@@ -675,6 +676,9 @@
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         });
         vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (vadAudioCtx.state === "suspended") {
+          await vadAudioCtx.resume();
+        }
         const source = vadAudioCtx.createMediaStreamSource(mediaStream);
         const analyser = vadAudioCtx.createAnalyser();
         analyser.fftSize = 1024;
@@ -709,7 +713,13 @@
         return;
       }
 
-      if (mediaRecorder && mediaRecorder.state === "recording") return;
+      if (vadAudioCtx && vadAudioCtx.state === "suspended") {
+        try { await vadAudioCtx.resume(); } catch (e) {}
+      }
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        vadHasSpeech = false;
+        try { mediaRecorder.stop(); } catch (e) {}
+      }
       audioChunks = [];
       vadHasSpeech = false;
       whisperRecordingStart = Date.now();
@@ -767,7 +777,7 @@
         }
         const rms = Math.sqrt(sum / buf.length);
 
-        if (rms > 0.022) {
+        if (rms > 0.012) {
           if (!vadHasSpeech) {
             vadHasSpeech = true;
             utteranceStartTime = Date.now();
@@ -983,10 +993,13 @@
         whisperEnabled = false;
       }
 
-      if (!whisperEnabled) {
+      if (whisperEnabled) {
+        // Warm up mic permission immediately; recording starts when Hero finishes greeting
+        await initWhisperVAD();
+      } else {
         initSpeechRecognition();
+        startRecognitionSafe();
       }
-      startRecognitionSafe();
 
       sendTurn("", false, 0.0);
     }
@@ -1075,6 +1088,9 @@
       isTurnInFlight = true;
       accumulatedTranscript = "";
       lastInterimTranscript = "";
+      if (whisperEnabled) {
+        stopRecognitionSafe();
+      }
       if (speechDebounceTimer) {
         clearTimeout(speechDebounceTimer);
         speechDebounceTimer = null;
