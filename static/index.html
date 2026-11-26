@@ -601,6 +601,7 @@
 
     let isRecognitionRunning = false;
     let isRecognitionStarting = false;
+    let recognitionStartTimestamp = 0;
     let restartTimer = null;
     let isCeremonyFinished = false;
     let lastInterimTranscript = "";
@@ -630,16 +631,24 @@
         startWhisperListening();
         return;
       }
+      // Self-heal if isRecognitionStarting ever got stuck > 2.5s
+      if (isRecognitionStarting && (Date.now() - recognitionStartTimestamp > 2500)) {
+        isRecognitionStarting = false;
+      }
       if (isRecognitionRunning || isRecognitionStarting) return;
       if (!recognition) initSpeechRecognition();
       if (!recognition) return;
 
       isRecognitionStarting = true;
+      recognitionStartTimestamp = Date.now();
       try {
         recognition.start();
       } catch (err) {
         isRecognitionStarting = false;
-        if (err.name !== 'InvalidStateError') {
+        if (err.name === 'InvalidStateError') {
+          // Already running in browser — sync our flag so onresult/onend work properly
+          isRecognitionRunning = true;
+        } else {
           console.warn("Recognition start note:", err.message);
         }
       }
@@ -1308,6 +1317,11 @@
           isHeroSpeaking = false;
           isTurnInFlight = false;
           accumulatedTranscript = "";
+          lastInterimTranscript = "";
+          if (speechDebounceTimer) {
+            clearTimeout(speechDebounceTimer);
+            speechDebounceTimer = null;
+          }
           if (isCeremonyFinished) {
             endCall();
           } else if (isCallActive) {
