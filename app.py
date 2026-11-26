@@ -8,10 +8,13 @@ Serves the Manifest 2027 Mirror Chamber UI with:
 """
 import os
 import sys
+import time
+import json
 import base64
 import asyncio
 import tempfile
 import webbrowser
+from collections import defaultdict, deque
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -22,9 +25,55 @@ import edge_tts
 import aiohttp
 
 from brain import HeroBrain
-from config import DEFAULT_VOICE, HINDI_VOICE, FEMALE_VOICE, GROQ_API_KEY, GROQ_WHISPER_MODEL
+from config import DEFAULT_VOICE, HINDI_VOICE, FEMALE_VOICE, USE_VPS_CLAUDE, GROQ_API_KEY, GROQ_WHISPER_MODEL
 
 app = FastAPI(title="Manifest 2027 Voice Agent")
+
+APP_START_TIME = time.time()
+RATE_LIMIT_BUCKETS: Dict[str, deque] = defaultdict(deque)
+APP_METRICS: Dict[str, Any] = {
+    "total_turns": 0,
+    "source_counts": {"ceremonial": 0, "claude": 0, "groq": 0, "fallback": 0},
+    "tts_errors": 0,
+    "rate_limited_requests": 0,
+    "total_latency_ms": 0.0,
+    "recent_errors": deque(maxlen=10),
+}
+
+
+def _get_client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate_limit(request: Request, scope: str, max_requests: int = 30, window_sec: int = 60) -> Optional[JSONResponse]:
+    """Sliding-window per-IP rate limiter to protect LLM/TTS quotas."""
+    ip = _get_client_ip(request)
+    key = f"{scope}:{ip}"
+    now = time.time()
+    q = RATE_LIMIT_BUCKETS[key]
+    while q and now - q[0] > window_sec:
+        q.popleft()
+    if len(q) >= max_requests:
+        APP_METRICS["rate_limited_requests"] += 1
+        return JSONResponse(
+            {"success": False, "error": "Too many requests. Please wait a moment."},
+            status_code=429,
+            headers={"Retry-After": str(window_sec)},
+        )
+    q.append(now)
+    return None
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(STATIC_DIR):
@@ -51,6 +100,45 @@ async def serve_agent_ui():
             return HTMLResponse(content=f.read())
     return HTMLResponse("<h1>Voice Agent UI file not found</h1>", status_code=404)
 
+@app.get("/api/health")
+async def health_check():
+    """Health & readiness check for uptime monitors."""
+    turns = APP_METRICS["total_turns"]
+    avg_ms = round(APP_METRICS["total_latency_ms"] / turns, 1) if turns > 0 else 0.0
+    return JSONResponse({
+        "status": "ok",
+        "service": "manifest-2027",
+        "uptime_sec": round(time.time() - APP_START_TIME, 1),
+        "checks": {
+            "vps_claude_enabled": USE_VPS_CLAUDE,
+            "groq_configured": bool(GROQ_API_KEY),
+            "active_sessions": len(SESSION_STORE),
+            "tts_cache_size": len(TTS_CACHE),
+        },
+        "metrics": {
+            "total_turns": turns,
+            "avg_turn_latency_ms": avg_ms,
+            "source_counts": APP_METRICS["source_counts"],
+            "tts_errors": APP_METRICS["tts_errors"],
+            "rate_limited_requests": APP_METRICS["rate_limited_requests"],
+        },
+    })
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    """Structured telemetry & recent non-sensitive errors."""
+    turns = APP_METRICS["total_turns"]
+    return JSONResponse({
+        "total_turns": turns,
+        "avg_turn_latency_ms": round(APP_METRICS["total_latency_ms"] / turns, 1) if turns > 0 else 0.0,
+        "source_counts": APP_METRICS["source_counts"],
+        "tts_errors": APP_METRICS["tts_errors"],
+        "rate_limited_requests": APP_METRICS["rate_limited_requests"],
+        "recent_errors": list(APP_METRICS["recent_errors"]),
+    })
+
+
 @app.post("/api/reset")
 async def reset_session(request: Request):
     """Explicitly wipe session memory for fresh user ceremony."""
@@ -75,6 +163,9 @@ async def stt_status():
 @app.post("/api/stt")
 async def transcribe_whisper(request: Request):
     """Transcribe recorded browser audio via Groq Whisper API (supports Indian English & Hinglish)."""
+    limited = _check_rate_limit(request, "stt", max_requests=30, window_sec=60)
+    if limited:
+        return limited
     if not GROQ_API_KEY:
         return JSONResponse({"success": False, "error": "GROQ_API_KEY not configured"}, status_code=503)
 
@@ -127,16 +218,25 @@ async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_
             TTS_CACHE[cache_key] = audio_bytes
         return audio_bytes or None
     except Exception as e:
+        APP_METRICS["tts_errors"] += 1
+        APP_METRICS["recent_errors"].append({"type": "tts_inline", "error": str(e)[:120], "ts": int(time.time())})
         print(f"[TTS Inline Error] {e}")
         return None
 
 @app.post("/api/chat")
-async def process_chat_turn(req: ChatRequest):
+async def process_chat_turn(req: ChatRequest, request: Request):
     """Process conversation turn with full isolated per-user session memory and inline TTS."""
+    limited = _check_rate_limit(request, "chat", max_requests=30, window_sec=60)
+    if limited:
+        return limited
+
+    t0 = time.perf_counter()
     import uuid
     sess_id = req.session_id
     if not sess_id or sess_id.strip() in ["", "default"]:
         sess_id = f"sess_{uuid.uuid4().hex[:12]}"
+
+    safe_user_message = (req.user_message or "")[:2000]
     
     # Isolate session: if starting at stage 1 without an explicit user name, generate fresh brain
     if req.current_stage == 1 and not (req.context and req.context.get("user_name")):
@@ -154,7 +254,7 @@ async def process_chat_turn(req: ChatRequest):
     
     turn_result = await asyncio.to_thread(
         brain.process_turn,
-        user_message=req.user_message,
+        user_message=safe_user_message,
         was_interrupted=req.was_interrupted,
         audio_duration_sec=req.audio_duration_sec or 0.0
     )
@@ -168,7 +268,18 @@ async def process_chat_turn(req: ChatRequest):
     audio_b64 = base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None
 
     src = turn_result.get("source", "fallback")
-    print(f"\n[Turn Completed] Stage {turn_result['current_stage']} ({turn_result['stage_name']}) | Source: {src.upper()} | Audio: {len(audio_bytes) if audio_bytes else 0}B | Spoken: '{turn_result['hero_response'][:75]}...'")
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+    APP_METRICS["total_turns"] += 1
+    APP_METRICS["total_latency_ms"] += latency_ms
+    APP_METRICS["source_counts"][src] = APP_METRICS["source_counts"].get(src, 0) + 1
+    print(json.dumps({
+        "event": "chat_turn",
+        "stage": turn_result["current_stage"],
+        "stage_name": turn_result["stage_name"],
+        "source": src,
+        "latency_ms": latency_ms,
+        "audio_bytes": len(audio_bytes) if audio_bytes else 0,
+    }))
 
     return JSONResponse({
         "success": True,
@@ -189,12 +300,16 @@ async def process_chat_turn(req: ChatRequest):
 
 @app.get("/api/tts")
 async def generate_tts(
+    request: Request,
     text: str, 
     voice: Optional[str] = DEFAULT_VOICE,
     rate: Optional[str] = "+0%",
     pitch: Optional[str] = "+0Hz"
 ):
     """Synthesize text into complete in-memory MP3 bytes with Content-Length to prevent browser cutoff."""
+    limited = _check_rate_limit(request, "tts", max_requests=45, window_sec=60)
+    if limited:
+        return limited
     if not text or not text.strip():
         return JSONResponse({"error": "Empty text"}, status_code=400)
     
