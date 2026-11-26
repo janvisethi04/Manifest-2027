@@ -41,7 +41,8 @@ USE_VPS_CLAUDE = os.getenv("USE_VPS_CLAUDE", "True").lower() in ["true", "1", "y
 VPS_CLAUDE_URL = os.getenv("VPS_CLAUDE_URL", "https://147.93.31.18/claude/chat")
 VPS_CLAUDE_TOKEN = os.getenv("VPS_CLAUDE_TOKEN", "52966656f00195e84edae3746a80827308c6e1cbed98c51170abd1496165372e")
 
-# Groq Whisper STT Configuration (Optional — set GROQ_API_KEY in .env or Vercel env vars)
+# Groq Whisper STT & Fast LLM Configuration (Set GROQ_API_KEY in .env or Vercel env vars)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
+GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
 

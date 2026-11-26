@@ -19,7 +19,9 @@ from config import (
     CEREMONIAL_CLOSE_STATEMENT, 
     USE_VPS_CLAUDE, 
     VPS_CLAUDE_URL, 
-    VPS_CLAUDE_TOKEN
+    VPS_CLAUDE_TOKEN,
+    GROQ_API_KEY,
+    GROQ_LLM_MODEL
 )
 from emotion_engine import EmotionEngine, EMOTION_BRIDGES
 from prosody_engine import ProsodyEngine
@@ -215,7 +217,10 @@ class HeroBrain:
         if not USE_VPS_CLAUDE or not VPS_CLAUDE_TOKEN:
             return None
 
-        # Build compact recent dialog history (last 3 turns to minimize tokens & latency)
+        prompt = self._build_llm_prompt(user_msg, emotion_meta)
+
+    def _build_llm_prompt(self, user_msg: str, emotion_meta: Dict[str, Any]) -> str:
+        """Build compact, high-empathy prompt shared by Groq Llama 3.3 and VPS Claude."""
         history_lines = []
         for turn in self.history[-3:]:
             speaker = "U" if turn["speaker"] == "user" else "H"
@@ -225,7 +230,7 @@ class HeroBrain:
         next_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage + 1, "")
         next_q_hint = f'If advancing, end with: "{next_q}"' if next_q else ""
 
-        prompt = f"""You are Hero, a deeply warm, attentive human mirror for Manifest 2027 (like an intimate voice companion, never a bot or survey). Speak as "we" in 1-2 short spoken sentences.
+        return f"""You are Hero, a deeply warm, attentive human mirror for Manifest 2027 (like an intimate voice companion, never a bot or survey). Speak as "we" in 1-2 short spoken sentences.
 User: {self.user_name or 'Friend'} | Stage {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')}): {STAGE_GOALS.get(self.current_stage, '')}
 Emotion: {emotion_meta.get('label', 'Reflective')}
 History:
@@ -243,6 +248,44 @@ REPLY: <1-2 sentences>
 ADVANCE_STAGE: <YES|NO>
 CAPTURED_FIELD: <user_name|pride_2026|pride_2027|character_name|movie_scene|grounding_story|NONE>
 CAPTURED_VALUE: <short value|NONE>"""
+
+    def call_groq_llm(
+        self,
+        user_msg: str,
+        emotion_meta: Dict[str, Any],
+        prosody_info: Dict[str, Any]
+    ) -> Optional[Tuple[str, bool, Optional[str], Optional[str]]]:
+        """Ultra-fast (~0.4-0.8s) Groq Llama 3.3 70B brain."""
+        if not GROQ_API_KEY:
+            return None
+
+        prompt = self._build_llm_prompt(user_msg, emotion_meta)
+        try:
+            payload = {
+                "model": GROQ_LLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.65,
+                "max_tokens": 350
+            }
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "User-Agent": "Manifest2027-Hero/1.0"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=6.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply_text = data["choices"][0]["message"]["content"].strip()
+                if reply_text:
+                    parsed = self._parse_claude_response(reply_text)
+                    print(f"\n[⚡ Groq {GROQ_LLM_MODEL}] Spoken: '{parsed[0][:60]}...' | Advance: {parsed[1]}")
+                    return parsed
+        except Exception as e:
+            print(f"[Groq LLM Fallback Triggered] {e}")
+        return None
 
         try:
             ctx = ssl.create_default_context()
@@ -449,10 +492,10 @@ CAPTURED_VALUE: <short value|NONE>"""
                 else:
                     # If user asked an out-of-context question on Stage 1 instead of giving a name, respond via Claude
                     if len(user_msg_clean.split()) > 2 or "?" in user_msg_clean:
-                        claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
-                        if claude_result and claude_result[0]:
-                            hero_response = claude_result[0]
-                            source = "claude"
+                        llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta) or self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+                        if llm_result and llm_result[0]:
+                            hero_response = llm_result[0]
+                            source = "groq" if GROQ_API_KEY else "claude"
                             if "?" not in hero_response:
                                 hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
                         else:
@@ -478,22 +521,32 @@ CAPTURED_VALUE: <short value|NONE>"""
             self.current_stage = 7
 
         else:
-            # Query VPS Claude Code
-            claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
-
-            if claude_result:
-                reply, adv, field, val = claude_result
+            # Query fast Groq Llama 3.3 70B first (if configured), fallback to VPS Claude
+            llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+            if llm_result:
+                reply, adv, field, val = llm_result
                 hero_response = reply
                 should_advance = adv
-                source = "claude"
+                source = "groq"
                 if field and val:
                     self.manifestation_data[field] = val
                     if field == "user_name":
                         self.user_name = val
             else:
-                # Intelligent Fallback
-                hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
-                source = "fallback"
+                claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+                if claude_result:
+                    reply, adv, field, val = claude_result
+                    hero_response = reply
+                    should_advance = adv
+                    source = "claude"
+                    if field and val:
+                        self.manifestation_data[field] = val
+                        if field == "user_name":
+                            self.user_name = val
+                else:
+                    # Intelligent Fallback
+                    hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
+                    source = "fallback"
 
             # Advance stage only if the goal was genuinely unlocked
             if should_advance:
