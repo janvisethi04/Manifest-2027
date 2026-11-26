@@ -146,7 +146,7 @@ class HeroBrain:
         "you", "me", "my", "your", "we", "they", "it", "this", "that", "about",
         "please", "do", "does", "did", "is", "are", "was", "were", "am", "im",
         "he", "she", "i", "the", "a", "an", "name", "recipe", "weather", "time",
-        "meaning", "ceremony", "manifest", "not", "know"
+        "meaning", "ceremony", "manifest", "not", "know", "hai", "hoon", "hu", "hun"
     }
 
     @classmethod
