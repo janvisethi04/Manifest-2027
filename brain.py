@@ -138,9 +138,19 @@ class HeroBrain:
         "ha", "haan", "sure", "ok", "okay", "fine", "cool", "listening"
     }
 
+    NON_NAME_WORDS = {
+        "what", "how", "why", "when", "where", "who", "which", "can", "could",
+        "would", "should", "will", "tell", "give", "show", "help", "explain",
+        "you", "me", "my", "your", "we", "they", "it", "this", "that", "about",
+        "please", "do", "does", "did", "is", "are", "was", "were", "the", "a", "an",
+        "recipe", "weather", "time", "meaning", "ceremony", "manifest", "not", "know"
+    }
+
     @classmethod
     def _extract_name(cls, text: str) -> Optional[str]:
-        """Extract a valid human name from speech/text input. Returns None if input is just a greeting or evasion."""
+        """Extract a valid human name from speech/text input. Returns None for greetings, questions, or sentences."""
+        if "?" in text:
+            return None
         cleaned = text.strip().rstrip(".!?,")
         if not cleaned:
             return None
@@ -153,13 +163,18 @@ class HeroBrain:
             cleaned_lower = cleaned.lower()
             if cleaned_lower in cls.COMMON_GREETINGS:
                 return None
-            words = [w for w in cleaned.split() if w.lower() not in cls.COMMON_GREETINGS and w.lower() not in ["it's", "its", "here", "friend"]]
-            if not words:
+            raw_words = [w for w in cleaned.split() if w.lower() not in cls.COMMON_GREETINGS and w.lower() not in ["it's", "its", "here", "friend"]]
+            # A bare name without intro phrasing should be 1-3 words and contain no question/sentence words
+            if not raw_words or len(raw_words) > 3:
                 return None
-            candidate = " ".join(words)
+            if any(w.lower().strip(".,!?") in cls.NON_NAME_WORDS for w in raw_words):
+                return None
+            candidate = " ".join(raw_words)
 
         candidate = re.sub(r"[^A-Za-z\s\-]", "", candidate).strip()
         if not candidate or candidate.lower() in cls.COMMON_GREETINGS or len(candidate) > 30:
+            return None
+        if any(w.lower() in cls.NON_NAME_WORDS for w in candidate.split()):
             return None
 
         return candidate.title()
@@ -432,11 +447,21 @@ CAPTURED_VALUE: <short value|NONE>"""
                     )
                     self.current_stage = 2
                 else:
-                    # User greeted with "hi", "hey", or didn't provide a real name yet
-                    greeting_word = "Hello" if "hello" in user_msg_clean.lower() else ("Hey there" if "hey" in user_msg_clean.lower() else "Welcome")
-                    hero_response = (
-                        f"{greeting_word}! Before we step into 2027, who are we speaking with today?"
-                    )
+                    # If user asked an out-of-context question on Stage 1 instead of giving a name, respond via Claude
+                    if len(user_msg_clean.split()) > 2 or "?" in user_msg_clean:
+                        claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+                        if claude_result and claude_result[0]:
+                            hero_response = claude_result[0]
+                            source = "claude"
+                            if "?" not in hero_response:
+                                hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
+                        else:
+                            hero_response = f"Good question — we're here to dream out loud about your 2027! {STAGE_STAY_QUESTIONS[1]}"
+                    else:
+                        greeting_word = "Hello" if "hello" in user_msg_clean.lower() else ("Hey there" if "hey" in user_msg_clean.lower() else "Welcome")
+                        hero_response = (
+                            f"{greeting_word}! Before we step into 2027, who are we speaking with today?"
+                        )
                     self.current_stage = 1
             else:
                 name_greeting = f", {self.user_name}" if self.user_name else ""
