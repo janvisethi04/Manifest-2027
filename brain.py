@@ -192,54 +192,32 @@ class HeroBrain:
         if not USE_VPS_CLAUDE or not VPS_CLAUDE_TOKEN:
             return None
 
-        # Build recent dialog history
+        # Build compact recent dialog history (last 3 turns to minimize tokens & latency)
         history_lines = []
-        for turn in self.history[-6:]:
-            speaker = "User" if turn["speaker"] == "user" else "Hero"
-            history_lines.append(f"{speaker}: {turn['text']}")
-        history_str = "\n".join(history_lines) if history_lines else "(Beginning of ceremony)"
+        for turn in self.history[-3:]:
+            speaker = "U" if turn["speaker"] == "user" else "H"
+            history_lines.append(f"{speaker}: {turn['text'][:160]}")
+        history_str = "\n".join(history_lines) if history_lines else "Start"
 
-        polarity = emotion_meta.get("polarity", 0.0)
-        sentiment_label = "Neutral & Centered"
-        if polarity > 0.2:
-            sentiment_label = "Expansive & Uplifting"
-        elif polarity < -0.2:
-            sentiment_label = "Heavy, Tender or Depleted"
+        next_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage + 1, "")
+        next_q_hint = f'If advancing, end with: "{next_q}"' if next_q else ""
 
-        prompt = f"""You are Hero, companion for Manifest 2027. Speak as 'we', a warm, grounded human mirror, in 1-2 short spoken sentences. Never sound like a bot or survey.
-
-CONTEXT:
-- User: {self.user_name or 'Friend'}
-- Current Stage: {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')})
-- Stage Goal: {STAGE_GOALS.get(self.current_stage, '')}
-- Emotion Detected: {emotion_meta.get('label', 'Reflective')} ({polarity:+.2f})
-
-RECENT DIALOGUE:
+        prompt = f"""You are Hero, warm human mirror for Manifest 2027. Speak as "we" in 1-2 short spoken sentences.
+User: {self.user_name or 'Friend'} | Stage {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')}): {STAGE_GOALS.get(self.current_stage, '')}
+Emotion: {emotion_meta.get('label', 'Reflective')}
+History:
 {history_str}
+User said: "{user_msg}"
 
-USER JUST SAID:
-"{user_msg}"
+Rules:
+- If evasive/struggling ('nothing','idk','kuch nahi','hard year'), ADVANCE_STAGE: NO, validate empathetically & gently ask 1 question.
+- If answered, ADVANCE_STAGE: YES, savor in 1 sentence + ask next question! {next_q_hint}
 
-CONVERSATIONAL RULES:
-1. Speak in 1-2 spoken sentences only. Warm, natural, human.
-2. If user shares difficulty, struggle, or evasive words ('nothing', 'kuch nahi', 'idk', 'hard year', 'roller coaster', 'not much'):
-   - Set ADVANCE_STAGE: NO
-   - Meet them with deep compassion: acknowledge that a heavy year takes everything just to make it through, and surviving it is something to honor. Ask gently if there was even one quiet choice or hard day they got through, without pressure.
-3. If user answered the stage requirement:
-   - Set ADVANCE_STAGE: YES
-   - Extract CAPTURED_FIELD and CAPTURED_VALUE.
-   - YOUR SPOKEN REPLY MUST ALWAYS HAVE 2 PARTS:
-     (1) Savor their answer warmly in 1 sentence.
-     (2) Immediately ASK THE NEXT STAGE'S QUESTION in the second sentence so the conversation smoothly moves forward! Never stop at just a statement.
-     * When stepping into 2027 (Stage 3): End with: "Looking ahead into 2027, what do you want to feel deeply, audaciously proud of having done?"
-     * When stepping into the movie scene (Stage 4): End with: "Picture your 2027 like a movie scene. Which scene do you love most, and what are you doing?"
-     * When stepping into grounding (Stage 5): End with: "When have you already been this person in your own life? Tell us one real story of courage you pulled off."
-
-EXACT OUTPUT FORMAT:
-REPLY: <1-2 spoken sentences>
-ADVANCE_STAGE: <YES or NO>
-CAPTURED_FIELD: <user_name | pride_2026 | pride_2027 | character_name | movie_scene | grounding_story | NONE>
-CAPTURED_VALUE: <extracted value or NONE>"""
+Format:
+REPLY: <1-2 sentences>
+ADVANCE_STAGE: <YES|NO>
+CAPTURED_FIELD: <user_name|pride_2026|pride_2027|character_name|movie_scene|grounding_story|NONE>
+CAPTURED_VALUE: <short value|NONE>"""
 
         try:
             ctx = ssl.create_default_context()
@@ -254,7 +232,7 @@ CAPTURED_VALUE: <extracted value or NONE>"""
                     "Authorization": f"Bearer {VPS_CLAUDE_TOKEN}"
                 }
             )
-            with urllib.request.urlopen(req, context=ctx, timeout=6.0) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=8.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 reply_text = data.get("reply", "").strip()
                 if reply_text:

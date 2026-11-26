@@ -8,6 +8,7 @@ Serves the Manifest 2027 Mirror Chamber UI with:
 """
 import os
 import sys
+import base64
 import asyncio
 import tempfile
 import webbrowser
@@ -61,9 +62,30 @@ async def reset_session(request: Request):
         pass
     return JSONResponse({"success": True, "message": "Session reset cleanly"})
 
+async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_val: str) -> Optional[bytes]:
+    """Synthesize MP3 bytes with in-memory cache."""
+    if not text or not text.strip():
+        return None
+    cache_key = f"{voice_name}_{rate_val}_{pitch_val}_{text.strip()}"
+    if cache_key in TTS_CACHE:
+        return TTS_CACHE[cache_key]
+    try:
+        communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
+        chunks = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        audio_bytes = b"".join(chunks)
+        if audio_bytes and len(TTS_CACHE) < 200:
+            TTS_CACHE[cache_key] = audio_bytes
+        return audio_bytes or None
+    except Exception as e:
+        print(f"[TTS Inline Error] {e}")
+        return None
+
 @app.post("/api/chat")
 async def process_chat_turn(req: ChatRequest):
-    """Process conversation turn with full isolated per-user session memory."""
+    """Process conversation turn with full isolated per-user session memory and inline TTS."""
     import uuid
     sess_id = req.session_id
     if not sess_id or sess_id.strip() in ["", "default"]:
@@ -83,26 +105,36 @@ async def process_chat_turn(req: ChatRequest):
             
     brain.current_stage = req.current_stage
     
-    turn_result = brain.process_turn(
+    turn_result = await asyncio.to_thread(
+        brain.process_turn,
         user_message=req.user_message,
         was_interrupted=req.was_interrupted,
         audio_duration_sec=req.audio_duration_sec or 0.0
     )
     
+    # Generate TTS audio inline in the same serverless invocation to eliminate second HTTP round-trip
+    emotion = turn_result.get("emotion", {})
+    voice_name = req.voice or DEFAULT_VOICE
+    rate_val = emotion.get("voice_rate", "+0%")
+    pitch_val = emotion.get("voice_pitch", "+0Hz")
+    audio_bytes = await synthesize_tts_bytes(turn_result["hero_response"], voice_name, rate_val, pitch_val)
+    audio_b64 = base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None
+
     src = turn_result.get("source", "fallback")
-    print(f"\n[Turn Completed] Stage {turn_result['current_stage']} ({turn_result['stage_name']}) | Source: {src.upper()} | Spoken: '{turn_result['hero_response'][:75]}...'")
+    print(f"\n[Turn Completed] Stage {turn_result['current_stage']} ({turn_result['stage_name']}) | Source: {src.upper()} | Audio: {len(audio_bytes) if audio_bytes else 0}B | Spoken: '{turn_result['hero_response'][:75]}...'")
 
     return JSONResponse({
         "success": True,
         "session_id": sess_id,
         "source": src,
         "hero_response": turn_result["hero_response"],
+        "audio_base64": audio_b64,
         "current_stage": turn_result["current_stage"],
         "stage_name": turn_result["stage_name"],
         "is_finished": turn_result["is_finished"],
         "was_interrupted": turn_result["was_interrupted"],
         "user_name": turn_result.get("manifestation_board", {}).get("user_name") or brain.user_name,
-        "emotion": turn_result.get("emotion", {}),
+        "emotion": emotion,
         "prosody": turn_result.get("prosody", {}),
         "trajectory": turn_result.get("trajectory", []),
         "manifestation_board": turn_result.get("manifestation_board", {})

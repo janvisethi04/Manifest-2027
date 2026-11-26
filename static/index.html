@@ -964,10 +964,11 @@
           updateManifestationBoardUI(data.manifestation_board, currentStage);
         }
 
-        // Play speech first, render text bubble synchronously the exact millisecond voice begins
+        // Play speech first (using inline base64 audio if returned to avoid 2nd HTTP round-trip),
+        // render text bubble synchronously the exact millisecond voice begins
         playSpeech(data.hero_response, () => {
           appendMessage("hero", data.hero_response, false, data.stage_name, data.emotion);
-        });
+        }, data.audio_base64 || null);
 
         if (data.is_finished) {
           isCeremonyFinished = true;
@@ -1057,7 +1058,7 @@
       }
     }
 
-    async function playSpeech(text, onPlayCallback = null) {
+    async function playSpeech(text, onPlayCallback = null, audioBase64 = null) {
       stopAudio();
       isHeroSpeaking = true;
       setCoreState("core-speaking");
@@ -1072,7 +1073,9 @@
       };
 
       try {
-        const audioUrl = `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`;
+        const audioUrl = audioBase64
+          ? `data:audio/mpeg;base64,${audioBase64}`
+          : `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`;
         currentAudio = new Audio(audioUrl);
 
         currentAudio.onplay = () => {
