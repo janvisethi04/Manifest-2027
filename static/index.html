@@ -985,24 +985,11 @@
       setCoreState("core-idle");
       updateStatus("Connecting to Hero...", "purple");
 
-      // Fire Stage 1 greeting IMMEDIATELY while warming up STT/mic in parallel
-      const greetingPromise = sendTurn("", false, 0.0);
+      // Use instant zero-latency Chrome en-IN Web Speech API
+      whisperEnabled = false;
+      initSpeechRecognition();
 
-      try {
-        const sttResp = await fetch("/api/stt/status");
-        const sttData = await sttResp.json();
-        whisperEnabled = Boolean(sttData.whisper_enabled);
-      } catch (e) {
-        whisperEnabled = false;
-      }
-
-      if (whisperEnabled) {
-        await initWhisperVAD();
-      } else {
-        initSpeechRecognition();
-      }
-
-      await greetingPromise;
+      await sendTurn("", false, 0.0);
     }
 
     function endCall() {
