@@ -933,6 +933,30 @@
       };
     }
 
+    const STAGE1_GREETING = "Welcome. A few minutes to dream out loud about your 2027. Before we begin, who are we speaking with today?";
+    let preloadedGreetingBlobUrl = null;
+    let isGreetingPreloading = false;
+
+    async function preloadStage1Greeting() {
+      if (preloadedGreetingBlobUrl || isGreetingPreloading) return;
+      isGreetingPreloading = true;
+      try {
+        const ttsUrl = `/api/tts?text=${encodeURIComponent(STAGE1_GREETING)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent("+0%")}&pitch=${encodeURIComponent("+0Hz")}`;
+        const resp = await fetch(ttsUrl);
+        if (resp.ok) {
+          const blob = await resp.blob();
+          preloadedGreetingBlobUrl = URL.createObjectURL(blob);
+        }
+      } catch (e) {
+      } finally {
+        isGreetingPreloading = false;
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      preloadStage1Greeting();
+    });
+
     function toggleCall() {
       if (!isCallActive) startCall();
       else endCall();
@@ -987,7 +1011,14 @@
       whisperEnabled = false;
       initSpeechRecognition();
 
-      await sendTurn("", false, 0.0);
+      if (preloadedGreetingBlobUrl) {
+        // Play preloaded Stage 1 greeting instantaneously (<50ms)
+        playSpeech(STAGE1_GREETING, () => {
+          appendMessage("hero", STAGE1_GREETING, false, "OPEN", { label: "Open & Receptive", color: "#0ea5e9", voice_rate: "+0%", voice_pitch: "+0Hz" });
+        }, null, preloadedGreetingBlobUrl);
+      } else {
+        await sendTurn("", false, 0.0);
+      }
     }
 
     function endCall() {
@@ -1246,7 +1277,7 @@
       }
     }
 
-    async function playSpeech(text, onPlayCallback = null, audioBase64 = null) {
+    async function playSpeech(text, onPlayCallback = null, audioBase64 = null, directAudioUrl = null) {
       stopAudio();
       isHeroSpeaking = true;
       setCoreState("core-speaking");
@@ -1261,9 +1292,11 @@
       };
 
       try {
-        const audioUrl = audioBase64
-          ? `data:audio/mpeg;base64,${audioBase64}`
-          : `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`;
+        const audioUrl = directAudioUrl
+          ? directAudioUrl
+          : (audioBase64
+            ? `data:audio/mpeg;base64,${audioBase64}`
+            : `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`);
         currentAudio = new Audio(audioUrl);
 
         currentAudio.onplay = () => {
