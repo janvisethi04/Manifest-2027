@@ -647,8 +647,15 @@
       } catch (err) {
         isRecognitionStarting = false;
         if (err.name === 'InvalidStateError') {
-          // Already running in browser — sync our flag so onresult/onend work properly
-          isRecognitionRunning = true;
+          // If Chrome is mid-stop or wedged, let onend/watchdog restart cleanly
+          console.warn("Recognition InvalidStateError, scheduling clean reset...");
+          setTimeout(() => {
+            if (isCallActive && !isMuted && !isCeremonyFinished && !isRecognitionRunning && !isRecognitionStarting) {
+              recognition = null;
+              initSpeechRecognition();
+              startRecognitionSafe();
+            }
+          }, 300);
         } else {
           console.warn("Recognition start note:", err.message);
         }
@@ -935,8 +942,9 @@
       recognition.onend = () => {
         isRecognitionRunning = false;
         isRecognitionStarting = false;
-        // Keep microphone permanently active during call, unless Hero is speaking
-        if (isCallActive && !isMuted && !isHeroSpeaking) {
+        // Keep microphone permanently warm throughout the active call
+        // (onresult already discards input while Hero is speaking)
+        if (isCallActive && !isMuted && !isCeremonyFinished) {
           if (restartTimer) clearTimeout(restartTimer);
           restartTimer = setTimeout(() => {
             startRecognitionSafe();
@@ -1335,6 +1343,14 @@
             updateStatus("Hero is listening... (Speak freely)", "emerald");
             utteranceStartTime = Date.now();
             startRecognitionSafe();
+            // Watchdog: if Chrome still isn't running after 600ms, recreate instance
+            setTimeout(() => {
+              if (isCallActive && !isMuted && !isHeroSpeaking && !isCeremonyFinished && !isRecognitionRunning && !isRecognitionStarting) {
+                recognition = null;
+                initSpeechRecognition();
+                startRecognitionSafe();
+              }
+            }, 600);
           } else {
             setCoreState("core-idle");
             updateStatus("Ready", "slate");
