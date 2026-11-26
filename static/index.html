@@ -611,6 +611,7 @@
     let restartTimer = null;
     let isCeremonyFinished = false;
     let isSessionPaused = false;
+    let pausedHeroAudio = null;
     let lastInterimTranscript = "";
     let currentTurnAbortController = null;
     let whisperEnabled = false;
@@ -1010,6 +1011,24 @@
       isCallActive = true;
       isSessionPaused = false;
       setCallButtonActive();
+
+      if (pausedHeroAudio) {
+        const audioToResume = pausedHeroAudio;
+        pausedHeroAudio = null;
+        currentAudio = audioToResume;
+        isHeroSpeaking = true;
+        setCoreState("core-speaking");
+        updateStatus("Hero is speaking...", "purple");
+        audioToResume.play().catch(() => {
+          isHeroSpeaking = false;
+          setCoreState("core-listening");
+          updateStatus("Hero is listening... (Speak freely)", "emerald");
+          initSpeechRecognition();
+          startRecognitionSafe();
+        });
+        return;
+      }
+
       setCoreState("core-listening");
       updateStatus("Hero is listening... (Speak freely)", "emerald");
       utteranceStartTime = Date.now();
@@ -1046,6 +1065,7 @@
       // Reset manifestation board UI
       isCeremonyFinished = false;
       isSessionPaused = false;
+      pausedHeroAudio = null;
       document.getElementById("boardCharacterName").innerText = "The Sovereign Creator";
       document.getElementById("boardMovieScene").innerText = '"Picture your 2027 like a scene in a film..."';
       document.getElementById("boardPride2026").innerText = "Awaiting your reflection...";
@@ -1091,7 +1111,20 @@
         try { currentTurnAbortController.abort(); } catch (e) {}
         currentTurnAbortController = null;
       }
-      stopAudio();
+
+      // If Hero was speaking mid-sentence, pause audio at exact timestamp so Resume finishes it
+      if (currentAudio && !currentAudio.paused && !currentAudio.ended) {
+        if (audioSafetyTimer) {
+          clearTimeout(audioSafetyTimer);
+          audioSafetyTimer = null;
+        }
+        currentAudio.pause();
+        pausedHeroAudio = currentAudio;
+        isHeroSpeaking = false;
+      } else {
+        pausedHeroAudio = null;
+        stopAudio();
+      }
       stopWhisperStream();
 
       const btn = document.getElementById("callButton");
@@ -1110,6 +1143,7 @@
     function endCall() {
       isCallActive = false;
       isSessionPaused = false;
+      pausedHeroAudio = null;
       isTurnInFlight = false;
       accumulatedTranscript = "";
       lastInterimTranscript = "";
