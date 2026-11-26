@@ -144,8 +144,9 @@ class HeroBrain:
         "what", "how", "why", "when", "where", "who", "which", "can", "could",
         "would", "should", "will", "tell", "give", "show", "help", "explain",
         "you", "me", "my", "your", "we", "they", "it", "this", "that", "about",
-        "please", "do", "does", "did", "is", "are", "was", "were", "the", "a", "an",
-        "recipe", "weather", "time", "meaning", "ceremony", "manifest", "not", "know"
+        "please", "do", "does", "did", "is", "are", "was", "were", "am", "im",
+        "he", "she", "i", "the", "a", "an", "name", "recipe", "weather", "time",
+        "meaning", "ceremony", "manifest", "not", "know"
     }
 
     @classmethod
@@ -157,8 +158,8 @@ class HeroBrain:
         if not cleaned:
             return None
 
-        # Check explicit patterns: "my name is X", "i am X", "this is X", "call me X", "myself X"
-        match = re.search(r"(?:my name is|i am|i'm|this is|call me|myself|naam hai|mera naam)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", cleaned, re.IGNORECASE)
+        # Check explicit patterns: "my name is X", "i am X", "am X", "this is X", "call me X", "myself X"
+        match = re.search(r"(?:my name is|i am|i'm|\bim\b|\bam\b|this is|call me|myself|naam hai|mera naam)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", cleaned, re.IGNORECASE)
         if match:
             # Stop before any question/non-name words (e.g. "my name is Imansu who are you")
             name_parts = []
