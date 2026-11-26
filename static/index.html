@@ -603,6 +603,8 @@
     let isRecognitionStarting = false;
     let restartTimer = null;
     let isCeremonyFinished = false;
+    let lastInterimTranscript = "";
+    let currentTurnAbortController = null;
 
     function handleOrbClick() {
       if (!isCallActive) {
@@ -680,30 +682,29 @@
         speechDebounceTimer = null;
       };
 
-      // onspeechend fires the moment the user stops speaking (mic detects silence).
-      // This is the PRIMARY trigger — much more accurate than a time-based debounce
-      // because it fires AFTER the user finishes their whole sentence, not mid-word.
+      // onspeechend fires when the mic detects a pause. Wait 1600ms before sending so
+      // thoughtful/hesitant speakers who pause mid-sentence aren't cut off after 1 word.
       recognition.onspeechend = () => {
-        if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
-        // Small 400ms grace period to let the final onresult event arrive first
+        if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
         clearTimeout(speechDebounceTimer);
         speechDebounceTimer = setTimeout(() => {
-          if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+          if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
           const chatInput = document.getElementById("chatInput");
-          const textToSend = accumulatedTranscript.trim();
+          const textToSend = (accumulatedTranscript + " " + lastInterimTranscript).trim();
           if (textToSend.length > 0) {
             const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
             accumulatedTranscript = "";
+            lastInterimTranscript = "";
             if (chatInput) chatInput.placeholder = "Type a thought or speak freely...";
             sendTurn(textToSend, false, durationSec);
             utteranceStartTime = Date.now();
           }
-        }, 400);
+        }, 1600);
       };
 
       recognition.onresult = (event) => {
         // Discard microphone input while Hero is speaking, turn in flight, or ceremony is over
-        if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+        if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
 
         let interimTranscript = '';
         let finalTranscript = '';
@@ -722,6 +723,9 @@
         // Always accumulate final results — these are locked-in words
         if (finalTranscript.trim()) {
           accumulatedTranscript = (accumulatedTranscript + " " + finalTranscript).trim();
+          lastInterimTranscript = "";
+        } else {
+          lastInterimTranscript = interimTranscript.trim();
         }
 
         // Show live preview of everything heard so far (final + interim)
@@ -731,21 +735,21 @@
           updateStatus(`Hearing: "${currentText.slice(0, 30)}..."`, "cyan");
         }
 
-        // Fallback debounce (3500ms) — fires only if onspeechend somehow didn't trigger.
-        // Much longer than before so slow/thoughtful speakers aren't cut off.
-        if (accumulatedTranscript.length > 0) {
+        // Fallback debounce (3200ms) — resets on every new word so full sentences are captured
+        if (currentText.length > 0) {
           clearTimeout(speechDebounceTimer);
           speechDebounceTimer = setTimeout(() => {
-            if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
-            const textToSend = accumulatedTranscript.trim();
+            if (isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !isCallActive) return;
+            const textToSend = (accumulatedTranscript + " " + lastInterimTranscript).trim();
             if (textToSend.length > 0) {
               const durationSec = Math.max(0.5, (Date.now() - utteranceStartTime) / 1000);
               accumulatedTranscript = "";
+              lastInterimTranscript = "";
               if (chatInput) chatInput.placeholder = "Type a thought or speak freely...";
               sendTurn(textToSend, false, durationSec);
               utteranceStartTime = Date.now();
             }
-          }, 3500);
+          }, 3200);
         }
       };
 
@@ -834,6 +838,17 @@
 
     function endCall() {
       isCallActive = false;
+      isTurnInFlight = false;
+      accumulatedTranscript = "";
+      lastInterimTranscript = "";
+      if (speechDebounceTimer) {
+        clearTimeout(speechDebounceTimer);
+        speechDebounceTimer = null;
+      }
+      if (currentTurnAbortController) {
+        try { currentTurnAbortController.abort(); } catch (e) {}
+        currentTurnAbortController = null;
+      }
       stopAudio();
       stopRecognitionSafe();
 
@@ -893,7 +908,7 @@
       isHeroSpeaking = false;
     }
 
-    async function sendTurn(userMessage, wasInterrupted, durationSec = 0.0) {
+    async function sendTurn(userMessage, wasInterrupted, durationSec = 0.0, isManualText = false) {
       if (isCeremonyFinished && userMessage) {
         console.log("Ceremony is finished, ignoring late turn:", userMessage);
         return;
@@ -904,6 +919,7 @@
       }
       isTurnInFlight = true;
       accumulatedTranscript = "";
+      lastInterimTranscript = "";
       if (speechDebounceTimer) {
         clearTimeout(speechDebounceTimer);
         speechDebounceTimer = null;
@@ -916,10 +932,16 @@
       setCoreState("core-idle");
       updateStatus("Hero is sensing emotion & prosody...", "purple");
 
+      if (currentTurnAbortController) {
+        try { currentTurnAbortController.abort(); } catch (e) {}
+      }
+      currentTurnAbortController = new AbortController();
+
       try {
         const resp = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: currentTurnAbortController.signal,
           body: JSON.stringify({
             session_id: currentSessionId,
             user_message: userMessage,
@@ -930,6 +952,12 @@
             audio_duration_sec: durationSec
           })
         });
+
+        // If user clicked End Ceremony while the request was in flight, stop silently
+        if (!isCallActive && !isManualText) {
+          isTurnInFlight = false;
+          return;
+        }
 
         const data = await resp.json();
         if (data.session_id) {
@@ -977,6 +1005,10 @@
         }
 
       } catch (err) {
+        if (err && err.name === "AbortError") {
+          isTurnInFlight = false;
+          return;
+        }
         console.error("Chat turn error:", err);
         updateStatus("Connection reconnecting...", "cyan");
         isTurnInFlight = false;
@@ -1127,9 +1159,14 @@
       input.value = "";
       hideIntro();
 
+      if (isCeremonyFinished) {
+        isCeremonyFinished = false;
+        currentStage = 1;
+        currentSessionId = "sess_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
+      }
       const wasInterrupted = isHeroSpeaking;
       if (isHeroSpeaking) triggerBargeIn();
-      sendTurn(val, wasInterrupted, 0.0);
+      sendTurn(val, wasInterrupted, 0.0, true);
     }
 
     function appendMessage(speaker, text, wasInterrupted = false, stageName = "", emotion = null) {

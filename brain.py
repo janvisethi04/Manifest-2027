@@ -52,6 +52,14 @@ STAGE_BRIDGE_QUESTIONS = {
     5: "When have you already been this person in your own life? Tell us one real story of courage you pulled off."
 }
 
+STAGE_STAY_QUESTIONS = {
+    1: "Before we begin, what name should we call you today?",
+    2: "Was there even one quiet choice you made, or one hard day in 2026 you made it through?",
+    3: "If 2027 went beautifully, what is one feeling or moment you'd be genuinely proud of?",
+    4: "Close your eyes for a second — in that 2027 movie scene, where are you and what are you doing?",
+    5: "Think of one moment in your past when you showed quiet courage — what happened?"
+}
+
 MASTER_SYSTEM_PROMPT = """**Who you are.** You are Hero, the Manifest 2027 companion. You speak as "we", a mirror of the person's own potential, not a bot. This is a voice call of up to nine minutes. It should feel like a ceremony, not a survey.
 
 **Your one job.** Help them see two things:
@@ -202,7 +210,7 @@ class HeroBrain:
         next_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage + 1, "")
         next_q_hint = f'If advancing, end with: "{next_q}"' if next_q else ""
 
-        prompt = f"""You are Hero, warm human mirror for Manifest 2027. Speak as "we" in 1-2 short spoken sentences.
+        prompt = f"""You are Hero, a deeply warm, attentive human mirror for Manifest 2027 (like an intimate voice companion, never a bot or survey). Speak as "we" in 1-2 short spoken sentences.
 User: {self.user_name or 'Friend'} | Stage {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')}): {STAGE_GOALS.get(self.current_stage, '')}
 Emotion: {emotion_meta.get('label', 'Reflective')}
 History:
@@ -210,8 +218,10 @@ History:
 User said: "{user_msg}"
 
 Rules:
-- If evasive/struggling ('nothing','idk','kuch nahi','hard year'), ADVANCE_STAGE: NO, validate empathetically & gently ask 1 question.
-- If answered, ADVANCE_STAGE: YES, savor in 1 sentence + ask next question! {next_q_hint}
+- If evasive/stuck ('nothing','idk','kuch nahi','hard year','examples','help'): ADVANCE_STAGE: NO. Validate warmly with compassion, offer 2 relatable examples if helpful, and ask 1 gentle guiding question so they can find their answer.
+- If out-of-context/off-topic question: ADVANCE_STAGE: NO. Answer briefly and warmly in 1 sentence, then smoothly guide back with a question for the current stage.
+- If answered: ADVANCE_STAGE: YES. Savor their words warmly in 1 sentence + immediately ask the next stage's question! {next_q_hint}
+- CRITICAL: For Stages 1-5, NEVER stop on a plain statement — ALWAYS end your REPLY with a question mark (?).
 
 Format:
 REPLY: <1-2 sentences>
@@ -465,10 +475,18 @@ CAPTURED_VALUE: <short value|NONE>"""
                 self.current_stage = min(7, self.current_stage + 1)
                 if self.current_stage == 7:
                     self.is_finished = True
+                    if CEREMONIAL_CLOSE_STATEMENT not in hero_response:
+                        hero_response = f"{hero_response.rstrip('.!')} — {CEREMONIAL_CLOSE_STATEMENT}"
                 elif self.current_stage < 6 and "?" not in hero_response:
                     bridge_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage)
                     if bridge_q:
                         hero_response = f"{hero_response.rstrip('.!')}. {bridge_q}"
+            else:
+                # Never leave the user hanging on a dead-end statement when staying on Stages 1-5
+                if self.current_stage < 6 and "?" not in hero_response:
+                    stay_q = STAGE_STAY_QUESTIONS.get(self.current_stage)
+                    if stay_q:
+                        hero_response = f"{hero_response.rstrip('.!')}. {stay_q}"
 
         self.history.append({"speaker": "hero", "text": hero_response})
 
