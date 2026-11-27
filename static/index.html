@@ -633,6 +633,29 @@
     let vadHasSpeech = false;
     let vadSilenceTimer = null;
     let whisperRecordingStart = 0;
+    let idleCheckinTimer = null;
+    let idleCheckinSent = false;
+
+    function clearIdleCheckinTimer() {
+      if (idleCheckinTimer) {
+        clearTimeout(idleCheckinTimer);
+        idleCheckinTimer = null;
+      }
+    }
+
+    function scheduleIdleCheckin() {
+      clearIdleCheckinTimer();
+      if (idleCheckinSent || !isCallActive || isMuted || isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+      idleCheckinTimer = setTimeout(() => {
+        idleCheckinTimer = null;
+        if (idleCheckinSent || vadHasSpeech || !isCallActive || isMuted || isHeroSpeaking || isTurnInFlight || isCeremonyFinished) return;
+        idleCheckinSent = true;
+        stopRecognitionSafe();
+        const checkMsg = "Hey, are you still there? Take your time — or you can say skip whenever you're ready.";
+        appendMessage("hero", checkMsg, currentStage, { label: "Warm" });
+        playSpeech(checkMsg);
+      }, 12000);
+    }
 
     function handleOrbClick() {
       if (!isCallActive) {
@@ -680,6 +703,7 @@
     }
 
     function stopRecognitionSafe() {
+      clearIdleCheckinTimer();
       if (restartTimer) {
         clearTimeout(restartTimer);
         restartTimer = null;
@@ -786,6 +810,7 @@
       mediaRecorder.start(250);
       setCoreState("core-listening");
       updateStatus("Hero is listening (Whisper HD)... (Speak freely)", "emerald");
+      scheduleIdleCheckin();
 
       const analyser = vadAudioCtx._analyser;
       const buf = new Uint8Array(analyser.fftSize);
@@ -802,10 +827,12 @@
         }
         const rms = Math.sqrt(sum / buf.length);
 
-        if (rms > 0.025) {
+        if (rms > 0.015) {
           if (!speechCandidateStart) speechCandidateStart = Date.now();
-          if (!vadHasSpeech && (Date.now() - speechCandidateStart >= 300)) {
+          if (!vadHasSpeech && (Date.now() - speechCandidateStart >= 250)) {
             vadHasSpeech = true;
+            idleCheckinSent = false;
+            clearIdleCheckinTimer();
             utteranceStartTime = Date.now();
             updateStatus("Hearing your voice (Whisper HD)...", "cyan");
           }
@@ -821,7 +848,7 @@
               if (mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
               }
-            }, 1000);
+            }, 2000);
           }
         }
         vadRafId = requestAnimationFrame(monitorVolume);

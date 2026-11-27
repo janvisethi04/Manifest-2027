@@ -138,8 +138,9 @@ async def _transcribe_whisper_bytes(audio_bytes: bytes, content_type: str = "aud
     form = aiohttp.FormData()
     form.add_field("file", audio_bytes, filename=f"speech.{ext}", content_type=content_type)
     form.add_field("model", GROQ_WHISPER_MODEL)
+    form.add_field("language", "en")
     form.add_field("response_format", "json")
-    form.add_field("prompt", "Manifest 2027, Janvi, The Sovereign, calmly, sunlit terrace, Hinglish, kuch nahi.")
+    form.add_field("prompt", "Manifest 2027, Janvi, calm, sunlit, confident, set boundaries, stayed calm.")
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
@@ -343,20 +344,22 @@ async def process_voice_turn(
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     stt_ms = round((time.perf_counter() - t_stt) * 1000, 1)
-    # Ignore empty or non-word background noise clips
-    if not transcript or len(transcript.strip()) < 2 or not any(c.isalpha() for c in transcript):
-        return JSONResponse({"success": True, "empty_speech": True, "stt_ms": stt_ms})
+    from brain import strip_speech_fillers
+    cleaned_transcript = strip_speech_fillers(transcript) if transcript else ""
+    # Ignore empty, non-word background noise, or pure vocal hesitation fillers ("hmm", "uhhh", "umm")
+    if not cleaned_transcript or len(cleaned_transcript) < 2 or not any(c.isalpha() for c in cleaned_transcript):
+        return JSONResponse({"success": True, "empty_speech": True, "ignored_filler": bool(transcript and transcript.strip()), "stt_ms": stt_ms})
 
     ctx = {"user_name": user_name} if user_name else {}
     return await _execute_chat_turn(
-        user_message=transcript,
+        user_message=cleaned_transcript,
         was_interrupted=False,
         current_stage=current_stage,
         voice=voice,
         context=ctx,
         audio_duration_sec=audio_duration_sec,
         session_id=session_id,
-        extra_fields={"empty_speech": False, "user_transcript": transcript, "stt_ms": stt_ms},
+        extra_fields={"empty_speech": False, "user_transcript": cleaned_transcript, "stt_ms": stt_ms},
     )
 
 @app.get("/api/tts")

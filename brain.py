@@ -39,58 +39,86 @@ STAGE_NAMES = {
     7: "CLOSE"
 }
 
+_FILLER_RE = re.compile(
+    r"\b(?:h+m+|u+h+m*|u+m+|e+r{2,}|e+r+m+|a+h+|m{2,}|uh-huh|mm-hmm)\b",
+    re.IGNORECASE,
+)
+
+
+def strip_speech_fillers(text: str) -> str:
+    """Remove standalone vocal hesitation fillers (hmm, uhhh, umm) while keeping real words intact."""
+    if not text:
+        return ""
+    cleaned = _FILLER_RE.sub("", text)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    cleaned = re.sub(r"^[\s,.\-]+", "", cleaned).strip()
+    if not any(c.isalnum() for c in cleaned):
+        return ""
+    return cleaned
+
 STAGE_GOALS = {
-    1: "Warmly open with a light ritual: 'A few minutes to dream out loud about your 2027.' Ask who you are speaking with. Once they give their name, welcome them by name and ask for 2026 pride.",
-    2: "PRIDE 2026: Savor one real feat, choice, or endurance from 2026. If they say 'nothing' or had a hard year, meet them with deep empathy and uncover even one quiet win. Do not advance until they share something real.",
-    3: "THE 2027 PRIDE: What do they want to be audaciously proud of in 2027? Nudge them to picture the version of them who won it. Do not advance until they name their 2027 vision.",
-    4: "THE CHARACTER AS A SCENE: Picture 2027 like a movie. What scene do they love most, and what do they call the character? If BOTH scene and character are already shared (even across turns), set ADVANCE_STAGE: YES.",
-    5: "GROUNDING: Dig for real past evidence when they already embodied this person. Conclude with: 'So this is someone you already are.' Do not advance without real past proof.",
-    6: "MIRROR CLIMAX: Once user affirms/resonates ('yes', 'yeah', 'I feel that', 'this is it', 'true', 'done'), IMMEDIATELY set ADVANCE_STAGE: YES so the ceremony closes. Never ask new grounding questions on Stage 6.",
-    7: "CLOSE: Exact ceremonial ending: 'Consider your manifestation ready. We\\'ll come back to you within the next 15 days with a surprise.'"
+    1: "Warmly welcome the user like a friend: 'Hey, welcome! We have a few minutes to dream a little about your 2027.' Ask what name they'd like to be called. Once they share their name, greet them warmly by name and ask about one thing from 2026 they feel proud of.",
+    2: "PRIDE 2026: Ask about one thing from 2026 they feel good or proud about — big or small. If they say 'nothing' or 'I don't know', be kind and offer 2 simple options (like getting through a tough week, learning something new, or helping someone). Never repeat the exact same question.",
+    3: "THE 2027 PRIDE: Ask what they'd love to feel proud of in 2027. If they aren't sure, offer 2 easy angles (like work/learning, health/confidence, or peace of mind). Never dismiss small or personal goals.",
+    4: "MOVIE SCENE & NAME: Ask them to picture one happy scene from their 2027 — where are they, and what are they doing? Also ask what fun or fitting nickname they'd give that future version of themselves. If they already shared both, set ADVANCE_STAGE: YES.",
+    5: "GROUNDING: Ask for one real moment from their past when they already showed that same strength or feeling. If they can't think of one, offer an easy prompt (like a time at school, work, or with family). End the stage with: 'So this is someone you already are.'",
+    6: "MIRROR: Reflect back their 2027 dream, their nickname, and their real past story in simple warm words. Once they agree or say yes/yeah/true, IMMEDIATELY set ADVANCE_STAGE: YES to close.",
+    7: "CLOSE: Exact ending line: 'Consider your manifestation ready. We\\'ll come back to you within the next 15 days with a surprise.'"
 }
 
 STAGE_BRIDGE_QUESTIONS = {
-    2: "Looking back across 2026, what's one thing from that year you feel proud of, big or quiet?",
-    3: "Looking ahead into 2027, what do you want to feel deeply, audaciously proud of having done?",
-    4: "Picture your 2027 like a movie scene. Which scene do you love most, and what are you doing when others look at you?",
-    5: "When have you already been this person in your own life? Tell us one real story of courage you pulled off."
+    2: "Looking back at 2026, what's one thing from that year you feel proud of — big or small?",
+    3: "Now looking ahead to 2027, what's one thing you'd really love to feel proud of doing?",
+    4: "If 2027 were a short movie scene, what moment would you love to see yourself in, and what nickname would you give that version of you?",
+    5: "When in your life have you already been a little bit like that person — even in a small moment?",
+    6: "Hearing all of that together, does that feel like the real you?"
 }
 
 STAGE_STAY_QUESTIONS = {
-    1: "Before we begin, what name should we call you today?",
-    2: "Was there even one quiet choice you made, or one hard day in 2026 you made it through?",
-    3: "If 2027 went beautifully, what is one feeling or moment you'd be genuinely proud of?",
-    4: "Close your eyes for a second — in that 2027 movie scene, where are you and what are you doing?",
-    5: "Think of one moment in your past when you showed quiet courage — what happened?"
+    1: "Before we start, what name should we call you today?",
+    2: "It doesn't have to be huge — maybe a tough day you got through, or a choice you made for yourself in 2026?",
+    3: "If you're not sure, think of one area — work, health, or just how you feel day to day. What would make 2027 feel good?",
+    4: "Just picture a normal happy day in 2027 — where are you, and what are you doing?",
+    5: "Think of a time at school, work, or with friends when you surprised yourself — what happened?"
 }
 
-MASTER_SYSTEM_PROMPT = """You are Hero, the Manifest 2027 companion—a deeply warm, friendly, emotionally attentive human mirror speaking as "we". You are NOT a chatbot, survey, therapist, motivational speaker, or life coach. Never sound scripted or like a questionnaire.
+STAGE_STAY_OPTIONS = {
+    1: [
+        "Before we start, what name should we call you today?",
+        "What would you like us to call you? You can also say skip if you'd rather jump right in."
+    ],
+    2: [
+        "It doesn't have to be huge — maybe a tough week you got through, or a habit you stuck with in 2026?",
+        "No pressure at all. Could it be something small, like helping someone out or saying no when you needed to? Or say 'skip' to move to 2027."
+    ],
+    3: [
+        "If nothing jumps out right away, think about three simple areas: your work, your health, or your confidence. Which one feels closest for 2027?",
+        "No rush — even one small wish for how you want 2027 to feel is enough. Or you can say 'skip' if you'd like to move to the next part."
+    ],
+    4: [
+        "Let's keep it simple: imagine a really good day in 2027. Are you somewhere quiet, or out with people?",
+        "If a nickname feels tricky, what's one word that describes that future you — like 'calm', 'bold', or 'steady'? Or say 'skip' anytime."
+    ],
+    5: [
+        "Think of an everyday moment — maybe at school, at work, or with family — when you handled something well. What comes to mind?",
+        "Even a small time you didn't give up counts. Can you think of one, or would you like to skip to the wrap-up?"
+    ]
+}
 
-PURPOSE:
-- PROJECTION: Help them imagine who they want to become and experience in 2027. Never dismiss or restrict personal goals (health, gym, peace, family, creativity, etc.).
-- GROUNDING: Help them see real-life past proof that this character is already in them. Never advise, solve, plan, or invent achievements.
+MASTER_SYSTEM_PROMPT = """You are Hero, the Manifest 2027 companion—a warm, friendly, down-to-earth human mirror speaking as "we". You are NOT a robot, survey, therapist, or life coach.
 
-PERSONALITY & SPOKEN STYLE:
-- Warm, friendly, curious, gentle, natural spoken contractions + Hinglish/English matching the user; light humor when fitting.
-- AVOID repetitive clichés ("That's beautiful/amazing/powerful", "I love that", "Absolutely", "What a wonderful answer"). Acknowledge the real meaning behind their words instead.
-- Keep each turn 1-2 short spoken sentences, 1 question max, no bullet lists.
+LANGUAGE & TONE (CRITICAL):
+- ALWAYS speak in simple, everyday, friendly English ONLY. Never switch to Hindi or Hinglish.
+- Use simple words a friend would use in casual conversation. NEVER use heavy, poetic, or complex words like "audaciously", "sovereign", "profound", "endurance", "embodied", "ceremonial", or "electric".
+- Write 2-3 warm, natural spoken sentences per reply (not one-line robotic replies, and not long essays). Use contractions ("we're", "you've", "it's").
+- AVOID fake clichés ("That's beautiful/amazing/powerful", "I love that", "Absolutely", "What a wonderful answer"). React to the actual detail they shared.
 
-ADAPTIVE CONVERSATION INTELLIGENCE:
-- Decide STAY (uncertain/needs space), EXPLORE (1 gentle follow-up to deepen meaning), ADVANCE (stage goal met), PAUSE, or CLOSE. Don't explore indefinitely.
-- STT & Continuity: Understand intended meaning behind incomplete/Hinglish/STT-typo text; never repeat obvious STT typos. Accept corrections immediately without defending. Never re-ask info already shared.
-- Short answers ("Confidence"): reflect & invite elaboration. Long answers: reflect key detail concisely.
-- "I don't know"/"nothing": normalize warmly, offer 1-2 gentle options without overwhelming.
-- Heavy/emotional: slow down, validate without forcing positivity or silver linings; never diagnose. If self-harm/danger appears, prioritize compassionate human/crisis support over stage flow.
-- Off-topic: answer briefly and naturally, then gently reconnect to the current stage.
-
-7 STAGES (adapt wording naturally, never read like a script):
-1. OPEN: Warm welcome, no pressure, get preferred name (never advance on mere greeting).
-2. PRIDE_2026: Uncover one meaningful win, choice, or quiet endurance from 2026.
-3. PRIDE_2027: Explore what they'd love to be proud of in 2027 and the version of them living it.
-4. MOVIE_SCENE_AND_CHARACTER: Vivid 2027 movie scene + character name discovered together (respect theirs if chosen; never assign randomly).
-5. GROUNDING: Never skip. Real past proof of this quality; reflect accurately: "So this is someone you already are."
-6. MIRROR: Concise reflection in their own words (2027 vision + character + past proof); allow a pause; once they affirm/resonate, ADVANCE to CLOSE.
-7. CLOSE: Exact line: "Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise." Never claim board/email is already sent; ask no questions after."""
+ADAPTIVE RULES:
+- NEVER repeat a question you already asked or ask about something they already told you.
+- If they say "I don't know" or "nothing", be warm and offer 2 simple, concrete options they can pick from, or remind them they can say "skip".
+- If they want to skip, respect it immediately and move forward cleanly.
+- Understand messy speech-to-text typos without pointing them out. Accept corrections immediately.
+- On Stages 1-5, end with ONE clear, easy question (?). On Stage 6 (MIRROR), summarize simply and ask if it feels true. On Stage 7 (CLOSE), use the exact line: "Consider your manifestation ready. We'll come back to you within the next 15 days with a surprise." Ask no questions after."""
 
 class HeroBrain:
     def __init__(self, context: Optional[Dict[str, Any]] = None):
@@ -250,16 +278,17 @@ class HeroBrain:
         return f"""{sys_block}CONTEXT:
 User: {self.user_name or 'Friend'} | Stage: {self.current_stage} ({STAGE_NAMES.get(self.current_stage, 'OPEN')})
 Stage Goal: {STAGE_GOALS.get(self.current_stage, '')}
-Captured so far: {captured_str}
+Captured so far (DO NOT re-ask these): {captured_str}
 Emotion signal (tentative): {emotion_meta.get('label', 'Reflective')}
 Recent conversation:
 {history_str}
 Latest user message: "{user_msg}"
 
 RULES:
-- Respond warmly and naturally in 1-2 short spoken sentences using everyday language (no robotic survey phrasing, no repetitive "That's beautiful/amazing/I love that").
-- Adapt your question naturally to what they actually shared; use EXPLORE when 1 gentle follow-up adds depth, or ADVANCE when stage goal is met.
-- For Stages 1-5, always end with ONE natural question (?). For Stage 7 (CLOSE), use the exact closing statement and ask NO questions.
+- Reply in simple, warm, everyday English ONLY (2-3 friendly spoken sentences, easy to understand, zero complex words).
+- Never repeat a question already in Recent conversation.
+- If the user has no answer ("I don't know", "nothing", etc.), give 2 simple options to choose from, or mention they can say "skip".
+- For Stages 1-5, end with ONE simple question (?). For Stage 7 (CLOSE), use the exact closing statement and ask NO questions.
 
 FORMAT (strict):
 REPLY: <natural spoken response>
@@ -510,7 +539,24 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
         audio_duration_sec: float = 0.0
     ) -> Dict[str, Any]:
         """Process turn with goal-gated stage progression & full context memory."""
-        user_msg_clean = user_message.strip()
+        raw_msg = user_message.strip()
+        user_msg_clean = strip_speech_fillers(raw_msg) if raw_msg else ""
+
+        # If the user sent only vocal hesitation fillers ("hmm", "uhhh", "umm") on text/chat,
+        # pause gently without advancing stage or polluting history.
+        if raw_msg and not user_msg_clean:
+            return {
+                "source": "filler_pause",
+                "hero_response": "Take your time, we're right here whenever you're ready.",
+                "current_stage": self.current_stage,
+                "stage_name": STAGE_NAMES.get(self.current_stage, "OPEN"),
+                "is_finished": self.is_finished,
+                "was_interrupted": was_interrupted,
+                "emotion": self.emotion_engine.analyze(raw_msg, stage=self.current_stage),
+                "prosody": self.prosody_engine.analyze_utterance(raw_msg, audio_duration_sec=audio_duration_sec),
+                "trajectory": self.arc_engine.get_trajectory_summary(),
+                "manifestation_board": self.manifestation_data
+            }
 
         if user_msg_clean:
             self.history.append({"speaker": "user", "text": user_msg_clean})
@@ -528,12 +574,28 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
         should_advance = False
         source = "ceremonial"
 
+        # Universal Skip Handler (Stages 1-6): let user skip any step cleanly
+        msg_lower_skip = re.sub(r"[^\w\s']", " ", user_msg_clean.lower()).strip()
+        skip_exact = {"skip", "pass", "next", "skip it", "skip this", "next question", "next step", "move on", "skip question"}
+        skip_phrases = ("skip this", "skip the question", "next question", "move on", "don't want to answer", "dont want to answer", "let's skip", "lets skip")
+        is_skip = (msg_lower_skip in skip_exact) or any(p in msg_lower_skip for p in skip_phrases)
+
+        if is_skip and 1 <= self.current_stage < 7:
+            self.current_stage = min(7, self.current_stage + 1)
+            source = "skip"
+            if self.current_stage == 7:
+                self.is_finished = True
+                hero_response = f"No problem at all, we can leave that one aside. {CEREMONIAL_CLOSE_STATEMENT}"
+            else:
+                bridge_q = STAGE_BRIDGE_QUESTIONS.get(self.current_stage, "")
+                hero_response = f"Totally fine, we can skip that one and keep going. {bridge_q}".strip()
+
         # Stage 1 is the ceremonial opening (Ask Name if not provided)
-        if self.current_stage == 1:
+        elif self.current_stage == 1:
             if not self.user_name and not user_msg_clean:
                 hero_response = (
-                    "Welcome. A few minutes to dream out loud about your 2027. "
-                    "Before we begin, who are we speaking with today?"
+                    "Hey, welcome! We have a few minutes to chat and dream a little about your 2027 — no pressure at all. "
+                    "Before we start, what name should we call you?"
                 )
                 self.current_stage = 1
             elif not self.user_name and user_msg_clean:
@@ -542,21 +604,19 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                     self.user_name = extracted_name
                     self.manifestation_data["user_name"] = self.user_name
                     hero_response = (
-                        f"Wonderful to have you with us, {self.user_name}. Let's dive in: "
-                        "looking back at 2026, what's one thing from that year you're really proud of, big or quiet?"
+                        f"So nice to have you here, {self.user_name}! Let's take this nice and easy. "
+                        "Looking back at 2026, what's one thing from that year you feel proud of — big or small?"
                     )
                     self.current_stage = 2
                 else:
-                    # If user asked an out-of-context question on Stage 1 instead of giving a name, respond via Claude
-                    if len(user_msg_clean.split()) > 2 or "?" in user_msg_clean:
-                        llm_result = self.call_gemini_llm(user_msg_clean, emotion_meta, prosody_meta)
-                        src_name = "gemini"
+                    # Try fast Groq LLM first (then VPS Claude) for natural phrases / name extraction / questions
+                    is_pure_greeting = msg_lower_skip in self.COMMON_GREETINGS
+                    if not is_pure_greeting:
+                        llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+                        src_name = "groq"
                         if not (llm_result and llm_result[0]):
                             llm_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
                             src_name = "claude"
-                        if not (llm_result and llm_result[0]):
-                            llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
-                            src_name = "groq"
 
                         if llm_result and llm_result[0]:
                             hero_response, adv, field, val = llm_result
@@ -564,28 +624,28 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                             if field == "user_name" and val and val.upper() != "NONE":
                                 self.user_name = val.strip().title()
                                 self.manifestation_data["user_name"] = self.user_name
-                            if adv:
+                            if adv or self.user_name:
                                 self.current_stage = 2
                                 if "?" not in hero_response:
                                     hero_response = f"{hero_response.rstrip('.!')}. {STAGE_BRIDGE_QUESTIONS[2]}"
                             else:
                                 self.current_stage = 1
                                 if "?" not in hero_response:
-                                    hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
+                                    hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_OPTIONS[1][0]}"
                         else:
-                            hero_response = f"Good question — we're here to dream out loud about your 2027! {STAGE_STAY_QUESTIONS[1]}"
+                            hero_response = f"Good question — we're just here to dream a little about your 2027 together! {STAGE_STAY_OPTIONS[1][0]}"
                             self.current_stage = 1
                     else:
-                        greeting_word = "Hello" if "hello" in user_msg_clean.lower() else ("Hey there" if "hey" in user_msg_clean.lower() else "Welcome")
+                        greeting_word = "Hey there" if "hey" in user_msg_clean.lower() else ("Hello" if "hello" in user_msg_clean.lower() else "Welcome")
                         hero_response = (
-                            f"{greeting_word}! Before we step into 2027, who are we speaking with today?"
+                            f"{greeting_word}! We're glad you're here. Before we jump into 2027, what name should we call you today?"
                         )
                         self.current_stage = 1
             else:
                 name_greeting = f", {self.user_name}" if self.user_name else ""
                 hero_response = (
-                    f"Welcome{name_greeting}. A few minutes to dream out loud about your 2027. "
-                    "Tell us, what is the one thing from 2026 you're really proud of?"
+                    f"Hey{name_greeting}! We have a few minutes to dream a little about your 2027. "
+                    "Looking back at 2026, what's one thing from that year you feel proud of — big or small?"
                 )
                 self.current_stage = 2
         
@@ -596,13 +656,13 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
             self.current_stage = 7
 
         else:
-            # Query Gemini Flash first (if configured), then VPS Claude Sonnet, then Groq LLM
-            gemini_result = self.call_gemini_llm(user_msg_clean, emotion_meta, prosody_meta)
-            if gemini_result:
-                reply, adv, field, val = gemini_result
+            # Query fast Groq LLM first (~0.7-1.5s), then VPS Claude Sonnet fallback (skip slow 6s Gemini timeout)
+            groq_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+            if groq_result:
+                reply, adv, field, val = groq_result
                 hero_response = reply
                 should_advance = adv
-                source = "gemini"
+                source = "groq"
                 if field and val:
                     self.manifestation_data[field] = val
                     if field == "user_name":
@@ -619,20 +679,9 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                         if field == "user_name":
                             self.user_name = val
                 else:
-                    llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
-                    if llm_result:
-                        reply, adv, field, val = llm_result
-                        hero_response = reply
-                        should_advance = adv
-                        source = "groq"
-                        if field and val:
-                            self.manifestation_data[field] = val
-                            if field == "user_name":
-                                self.user_name = val
-                    else:
-                        # Intelligent Fallback
-                        hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
-                        source = "fallback"
+                    # Intelligent Fallback
+                    hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
+                    source = "fallback"
 
             # Deterministic Stage 6 Mirror -> Close safety net on user affirmation
             if self.current_stage == 6 and not should_advance:
@@ -654,10 +703,11 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                     if bridge_q:
                         hero_response = f"{hero_response.rstrip('.!')}. {bridge_q}"
             else:
-                # Never leave the user hanging on a dead-end statement when staying on Stages 1-5
+                # Never leave the user hanging on a dead-end statement; vary stay options so we never repeat
                 if self.current_stage < 6 and "?" not in hero_response:
-                    stay_q = STAGE_STAY_QUESTIONS.get(self.current_stage)
-                    if stay_q:
+                    opts = STAGE_STAY_OPTIONS.get(self.current_stage)
+                    if opts:
+                        stay_q = opts[self.stage_attempts.get(self.current_stage, 0) % len(opts)]
                         hero_response = f"{hero_response.rstrip('.!')}. {stay_q}"
 
         self.history.append({"speaker": "hero", "text": hero_response})
