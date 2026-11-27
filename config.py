@@ -46,3 +46,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
 
+# Gemini Flash Brain Configuration (Set GEMINI_API_KEY in .env or Vercel env vars)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+

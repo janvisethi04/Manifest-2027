@@ -21,7 +21,9 @@ from config import (
     VPS_CLAUDE_URL, 
     VPS_CLAUDE_TOKEN,
     GROQ_API_KEY,
-    GROQ_LLM_MODEL
+    GROQ_LLM_MODEL,
+    GEMINI_API_KEY,
+    GEMINI_MODEL
 )
 from emotion_engine import EmotionEngine, EMOTION_BRIDGES
 from prosody_engine import ProsodyEngine
@@ -303,6 +305,44 @@ CAPTURED_VALUE: <short value|NONE>"""
             print(f"[Groq LLM Fallback Triggered] {e}")
         return None
 
+    def call_gemini_llm(
+        self,
+        user_msg: str,
+        emotion_meta: Dict[str, Any],
+        prosody_info: Dict[str, Any]
+    ) -> Optional[Tuple[str, bool, Optional[str], Optional[str]]]:
+        """Direct Gemini Flash brain with MASTER_SYSTEM_PROMPT instruction + fast fallback."""
+        if not GEMINI_API_KEY:
+            return None
+
+        prompt = self._build_llm_prompt(user_msg, emotion_meta)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            payload = {
+                "systemInstruction": {"parts": [{"text": MASTER_SYSTEM_PROMPT}]},
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.65,
+                    "maxOutputTokens": 250,
+                    "thinkingConfig": {"thinkingBudget": 0}
+                }
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=6.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                reply_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if reply_text:
+                    parsed = self._parse_claude_response(reply_text)
+                    print(f"\n[⚡ Gemini {GEMINI_MODEL}] Spoken: '{parsed[0][:60]}...' | Advance: {parsed[1]}")
+                    return parsed
+        except Exception as e:
+            print(f"[Gemini LLM Fallback Triggered] {e}")
+        return None
+
         try:
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
@@ -508,10 +548,18 @@ CAPTURED_VALUE: <short value|NONE>"""
                 else:
                     # If user asked an out-of-context question on Stage 1 instead of giving a name, respond via Claude
                     if len(user_msg_clean.split()) > 2 or "?" in user_msg_clean:
-                        claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
-                        if claude_result and claude_result[0]:
-                            hero_response, adv, field, val = claude_result
-                            source = "claude"
+                        llm_result = self.call_gemini_llm(user_msg_clean, emotion_meta, prosody_meta)
+                        src_name = "gemini"
+                        if not (llm_result and llm_result[0]):
+                            llm_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+                            src_name = "claude"
+                        if not (llm_result and llm_result[0]):
+                            llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+                            src_name = "groq"
+
+                        if llm_result and llm_result[0]:
+                            hero_response, adv, field, val = llm_result
+                            source = src_name
                             if field == "user_name" and val and val.upper() != "NONE":
                                 self.user_name = val.strip().title()
                                 self.manifestation_data["user_name"] = self.user_name
@@ -524,20 +572,8 @@ CAPTURED_VALUE: <short value|NONE>"""
                                 if "?" not in hero_response:
                                     hero_response = f"{hero_response.rstrip('.!')}. {STAGE_STAY_QUESTIONS[1]}"
                         else:
-                            groq_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
-                            if groq_result and groq_result[0]:
-                                hero_response, adv, field, val = groq_result
-                                source = "groq"
-                                if field == "user_name" and val and val.upper() != "NONE":
-                                    self.user_name = val.strip().title()
-                                    self.manifestation_data["user_name"] = self.user_name
-                                if adv:
-                                    self.current_stage = 2
-                                else:
-                                    self.current_stage = 1
-                            else:
-                                hero_response = f"Good question — we're here to dream out loud about your 2027! {STAGE_STAY_QUESTIONS[1]}"
-                                self.current_stage = 1
+                            hero_response = f"Good question — we're here to dream out loud about your 2027! {STAGE_STAY_QUESTIONS[1]}"
+                            self.current_stage = 1
                     else:
                         greeting_word = "Hello" if "hello" in user_msg_clean.lower() else ("Hey there" if "hey" in user_msg_clean.lower() else "Welcome")
                         hero_response = (
@@ -559,32 +595,43 @@ CAPTURED_VALUE: <short value|NONE>"""
             self.current_stage = 7
 
         else:
-            # Query VPS Claude Sonnet first (best quality & lower latency than Qwen reasoning), fallback to Groq LLM
-            claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
-            if claude_result:
-                reply, adv, field, val = claude_result
+            # Query Gemini Flash first (if configured), then VPS Claude Sonnet, then Groq LLM
+            gemini_result = self.call_gemini_llm(user_msg_clean, emotion_meta, prosody_meta)
+            if gemini_result:
+                reply, adv, field, val = gemini_result
                 hero_response = reply
                 should_advance = adv
-                source = "claude"
+                source = "gemini"
                 if field and val:
                     self.manifestation_data[field] = val
                     if field == "user_name":
                         self.user_name = val
             else:
-                llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
-                if llm_result:
-                    reply, adv, field, val = llm_result
+                claude_result = self.call_vps_claude(user_msg_clean, emotion_meta, prosody_meta)
+                if claude_result:
+                    reply, adv, field, val = claude_result
                     hero_response = reply
                     should_advance = adv
-                    source = "groq"
+                    source = "claude"
                     if field and val:
                         self.manifestation_data[field] = val
                         if field == "user_name":
                             self.user_name = val
                 else:
-                    # Intelligent Fallback
-                    hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
-                    source = "fallback"
+                    llm_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
+                    if llm_result:
+                        reply, adv, field, val = llm_result
+                        hero_response = reply
+                        should_advance = adv
+                        source = "groq"
+                        if field and val:
+                            self.manifestation_data[field] = val
+                            if field == "user_name":
+                                self.user_name = val
+                    else:
+                        # Intelligent Fallback
+                        hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
+                        source = "fallback"
 
             # Deterministic Stage 6 Mirror -> Close safety net on user affirmation
             if self.current_stage == 6 and not should_advance:
