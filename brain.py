@@ -222,28 +222,45 @@ class HeroBrain:
         return candidate.title()
 
     def _parse_claude_response(self, raw_text: str) -> Tuple[str, bool, Optional[str], Optional[str]]:
-        """Parse structured response from Claude or fallback to raw text."""
+        """Parse structured response from LLM cleanly, stripping metadata even if REPLY: prefix is omitted."""
         reply = raw_text.strip()
         advance_stage = False
         captured_field = None
         captured_val = None
 
-        if "REPLY:" in raw_text:
-            reply_match = re.search(r"REPLY:\s*(.*?)(?=ADVANCE_STAGE:|$)", raw_text, re.DOTALL | re.IGNORECASE)
+        meta_boundary = r"(?=\b(?:ADVANCE_STAGE|CAPTURED_FIELD|CAPTURED_VALUE|TRANSITION_REASON)\s*:|$)"
+
+        if re.search(r"\bREPLY\s*:", raw_text, re.IGNORECASE):
+            reply_match = re.search(rf"\bREPLY\s*:\s*(.*?){meta_boundary}", raw_text, re.DOTALL | re.IGNORECASE)
             if reply_match:
                 reply = reply_match.group(1).strip()
+        else:
+            reply = re.split(
+                r"\b(?:ADVANCE_STAGE|CAPTURED_FIELD|CAPTURED_VALUE|TRANSITION_REASON)\s*:",
+                raw_text,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0].strip()
 
-            advance_match = re.search(r"ADVANCE_STAGE:\s*(YES|NO)", raw_text, re.IGNORECASE)
-            if advance_match:
-                advance_stage = advance_match.group(1).upper() == "YES"
+        # Final safety net: strip any leftover inline metadata tags
+        reply = re.split(
+            r"\b(?:ADVANCE_STAGE|CAPTURED_FIELD|CAPTURED_VALUE|TRANSITION_REASON)\s*:",
+            reply,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
 
-            field_match = re.search(r"CAPTURED_FIELD:\s*([a-zA-Z0-9_]+)", raw_text, re.IGNORECASE)
-            if field_match and field_match.group(1).upper() != "NONE":
-                captured_field = field_match.group(1).strip()
+        advance_match = re.search(r"\bADVANCE_STAGE\s*:\s*(YES|NO)\b", raw_text, re.IGNORECASE)
+        if advance_match:
+            advance_stage = advance_match.group(1).upper() == "YES"
 
-            val_match = re.search(r"CAPTURED_VALUE:\s*(.*?)(?=$|\n[A-Z_]+:)", raw_text, re.DOTALL | re.IGNORECASE)
-            if val_match and val_match.group(1).strip().upper() != "NONE":
-                captured_val = val_match.group(1).strip()
+        field_match = re.search(r"\bCAPTURED_FIELD\s*:\s*([a-zA-Z0-9_]+)", raw_text, re.IGNORECASE)
+        if field_match and field_match.group(1).upper() != "NONE":
+            captured_field = field_match.group(1).strip()
+
+        val_match = re.search(rf"\bCAPTURED_VALUE\s*:\s*(.*?){meta_boundary}", raw_text, re.DOTALL | re.IGNORECASE)
+        if val_match and val_match.group(1).strip().upper() != "NONE":
+            captured_val = val_match.group(1).strip()
 
         return reply, advance_stage, captured_field, captured_val
 
@@ -313,7 +330,7 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                 "model": GROQ_LLM_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.65,
-                "max_tokens": 350
+                "max_tokens": 220
             }
             req = urllib.request.Request(
                 "https://api.groq.com/openai/v1/chat/completions",
@@ -324,7 +341,7 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                     "User-Agent": "Manifest2027-Hero/1.0"
                 }
             )
-            with urllib.request.urlopen(req, timeout=6.0) as resp:
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 reply_text = data["choices"][0]["message"]["content"].strip()
                 if reply_text:

@@ -7,6 +7,7 @@ Serves the Manifest 2027 Mirror Chamber UI with:
 - Zero-latency Barge-in (<10ms)
 """
 import os
+import re
 import sys
 import time
 import json
@@ -15,7 +16,7 @@ import asyncio
 import tempfile
 import webbrowser
 from collections import deque
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse, Response
@@ -130,8 +131,45 @@ async def stt_status():
         "model": GROQ_WHISPER_MODEL if GROQ_API_KEY else None
     })
 
+_WHISPER_HALLUCINATIONS = {
+    "thank you", "thank you.", "thank you very much", "thanks", "thanks for watching",
+    "thank you for watching", "you're welcome", "i am a very happy person",
+    "bye", "goodbye", "see you next time", "please subscribe", "subscribe",
+    "subtitles by", "amara.org"
+}
+
+
+def _clean_whisper_response(data: Dict[str, Any]) -> str:
+    """Filter out Whisper silence/noise hallucinations using segment no_speech_prob & logprob."""
+    segments = data.get("segments")
+    if isinstance(segments, list) and segments:
+        kept: List[str] = []
+        for idx, seg in enumerate(segments):
+            seg_text = (seg.get("text") or "").strip()
+            if not seg_text:
+                continue
+            no_speech = float(seg.get("no_speech_prob", 0.0) or 0.0)
+            avg_logprob = float(seg.get("avg_logprob", 0.0) or 0.0)
+            norm = re.sub(r"[^\w\s']", "", seg_text.lower()).strip()
+
+            # Drop high no-speech or very low-confidence noise segments
+            if no_speech >= 0.55 or avg_logprob <= -1.2:
+                continue
+            # Drop classic Whisper silence hallucinations ("Thank you.", "I am a very happy person.")
+            if norm in _WHISPER_HALLUCINATIONS and (no_speech >= 0.15 or avg_logprob <= -0.45 or idx == len(segments) - 1):
+                continue
+            kept.append(seg_text)
+        return " ".join(kept).strip()
+
+    raw_text = (data.get("text") or "").strip()
+    norm_raw = re.sub(r"[^\w\s']", "", raw_text.lower()).strip()
+    if norm_raw in _WHISPER_HALLUCINATIONS:
+        return ""
+    return raw_text
+
+
 async def _transcribe_whisper_bytes(audio_bytes: bytes, content_type: str = "audio/webm") -> str:
-    """Transcribe raw audio bytes via Groq whisper-large-v3-turbo."""
+    """Transcribe raw audio bytes via Groq whisper-large-v3-turbo with hallucination filtering."""
     if not GROQ_API_KEY or not audio_bytes or len(audio_bytes) < 800:
         return ""
     ext = "mp4" if "mp4" in content_type else ("ogg" if "ogg" in content_type else "webm")
@@ -139,7 +177,8 @@ async def _transcribe_whisper_bytes(audio_bytes: bytes, content_type: str = "aud
     form.add_field("file", audio_bytes, filename=f"speech.{ext}", content_type=content_type)
     form.add_field("model", GROQ_WHISPER_MODEL)
     form.add_field("language", "en")
-    form.add_field("response_format", "json")
+    form.add_field("temperature", "0")
+    form.add_field("response_format", "verbose_json")
     form.add_field("prompt", "Manifest 2027, Janvi, calm, sunlit, confident, set boundaries, stayed calm.")
 
     async with aiohttp.ClientSession() as session:
@@ -153,7 +192,7 @@ async def _transcribe_whisper_bytes(audio_bytes: bytes, content_type: str = "aud
                 err_txt = await resp.text()
                 raise RuntimeError(f"Groq Whisper HTTP {resp.status}: {err_txt[:150]}")
             data = await resp.json()
-            return (data.get("text") or "").strip()
+            return _clean_whisper_response(data)
 
 
 @app.post("/api/stt")

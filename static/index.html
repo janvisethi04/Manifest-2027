@@ -827,7 +827,7 @@
         }
         const rms = Math.sqrt(sum / buf.length);
 
-        if (rms > 0.015) {
+        if (rms > 0.020) {
           if (!speechCandidateStart) speechCandidateStart = Date.now();
           if (!vadHasSpeech && (Date.now() - speechCandidateStart >= 250)) {
             vadHasSpeech = true;
@@ -848,7 +848,7 @@
               if (mediaRecorder && mediaRecorder.state === "recording") {
                 mediaRecorder.stop();
               }
-            }, 2000);
+            }, 1400);
           }
         }
         vadRafId = requestAnimationFrame(monitorVolume);
