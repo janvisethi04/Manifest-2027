@@ -214,13 +214,13 @@ async def transcribe_whisper(request: Request):
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 def _naturalize_prosody(rate_val: str, pitch_val: str) -> tuple[str, str]:
-    """Keep Edge-TTS rate & pitch subtle so emotional modulation sounds warm, never robotic."""
+    """Keep Edge-TTS rate & pitch natural and lively so Hero sounds like a warm friend."""
     try:
         r = int(str(rate_val).replace("%", "").replace("+", ""))
-        r = max(-6, min(4, r))
+        r = max(-2, min(6, r))
         rate_clean = f"{r:+d}%"
     except Exception:
-        rate_clean = "-2%"
+        rate_clean = "+0%"
     try:
         p = int(str(pitch_val).lower().replace("hz", "").replace("+", ""))
         p = max(-2, min(2, p))

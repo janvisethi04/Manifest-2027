@@ -110,11 +110,11 @@ MASTER_SYSTEM_PROMPT = """You are Hero, the Manifest 2027 companion—a warm, fr
 LANGUAGE & TONE (CRITICAL):
 - ALWAYS speak in simple, everyday, friendly English ONLY. Never switch to Hindi or Hinglish.
 - Use simple words a friend would use in casual conversation. NEVER use heavy, poetic, or complex words like "audaciously", "sovereign", "profound", "endurance", "embodied", "ceremonial", or "electric".
-- Write 2-3 warm, natural spoken sentences per reply (not one-line robotic replies, and not long essays). Use contractions ("we're", "you've", "it's").
+- Write 2-3 warm, natural spoken sentences per reply (not one-line robotic replies, and not long essays). Use contractions ("we're", "you've", "it's") and casual human starters when fitting ("Oh nice,", "Honestly,", "I hear you,").
 - AVOID fake clichés ("That's beautiful/amazing/powerful", "I love that", "Absolutely", "What a wonderful answer"). React to the actual detail they shared.
 
 ADAPTIVE RULES:
-- NEVER repeat a question you already asked or ask about something they already told you.
+- NEVER repeat a question you already asked or ask about something they already told you (even if they shared their movie scene or character name early!).
 - If they say "I don't know" or "nothing", be warm and offer 2 simple, concrete options they can pick from, or remind them they can say "skip".
 - If they want to skip, respect it immediately and move forward cleanly.
 - Understand messy speech-to-text typos without pointing them out. Accept corrections immediately.
@@ -673,6 +673,7 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
             self.current_stage = 7
 
         else:
+            self.stage_attempts[self.current_stage] = self.stage_attempts.get(self.current_stage, 0) + 1
             # Query fast Groq LLM first (~0.7-1.5s), then VPS Claude Sonnet fallback (skip slow 6s Gemini timeout)
             groq_result = self.call_groq_llm(user_msg_clean, emotion_meta, prosody_meta)
             if groq_result:
@@ -700,6 +701,10 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
                     hero_response, should_advance = self._fallback_turn(user_msg_clean, emotion_meta, prosody_meta, was_interrupted=was_interrupted)
                     source = "fallback"
 
+            # Gentle flow guard: never let a single stage loop for more than 3 user turns
+            if 2 <= self.current_stage <= 5 and self.stage_attempts.get(self.current_stage, 0) >= 3 and not should_advance:
+                should_advance = True
+
             # Deterministic Stage 6 Mirror -> Close safety net on user affirmation
             if self.current_stage == 6 and not should_advance:
                 msg_l = user_msg_clean.lower()
@@ -711,6 +716,11 @@ TRANSITION_REASON: <STAY|EXPLORE|ADVANCE|PAUSE|CLOSE>"""
             # Advance stage only if the goal was genuinely unlocked
             if should_advance:
                 self.current_stage = min(7, self.current_stage + 1)
+                # Smart catch-up: skip stages whose data was already captured in earlier turns
+                if self.current_stage == 4 and self.manifestation_data.get("movie_scene") and self.manifestation_data.get("character_name"):
+                    self.current_stage = 5
+                if self.current_stage == 5 and self.manifestation_data.get("grounding_story"):
+                    self.current_stage = 6
                 if self.current_stage == 7:
                     self.is_finished = True
                     if CEREMONIAL_CLOSE_STATEMENT not in hero_response:
