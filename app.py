@@ -194,12 +194,17 @@ async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_
     """Synthesize MP3 bytes with in-memory cache and natural emotional prosody."""
     if not text or not text.strip():
         return None
-    rate_clean, pitch_clean = _naturalize_prosody(rate_val, pitch_val)
+    is_multilingual = "Multilingual" in (voice_name or "")
+    rate_clean, pitch_clean = ("+0%", "+0Hz") if is_multilingual else _naturalize_prosody(rate_val, pitch_val)
     cache_key = f"{voice_name}_{rate_clean}_{pitch_clean}_{text.strip()}"
     if cache_key in TTS_CACHE:
         return TTS_CACHE[cache_key]
     try:
-        communicate = edge_tts.Communicate(text, voice_name, rate=rate_clean, pitch=pitch_clean)
+        communicate = (
+            edge_tts.Communicate(text, voice_name)
+            if is_multilingual
+            else edge_tts.Communicate(text, voice_name, rate=rate_clean, pitch=pitch_clean)
+        )
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -378,7 +383,12 @@ async def generate_tts(
         )
     
     try:
-        communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
+        is_multilingual = "Multilingual" in (voice_name or "")
+        communicate = (
+            edge_tts.Communicate(text, voice_name)
+            if is_multilingual
+            else edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
+        )
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
