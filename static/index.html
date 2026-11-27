@@ -682,7 +682,7 @@
       if (mediaStream) return true;
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         });
         vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (vadAudioCtx.state === "suspended") {
@@ -737,7 +737,11 @@
         ? "audio/webm;codecs=opus"
         : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "audio/webm");
 
-      mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+      try {
+        mediaRecorder = new MediaRecorder(mediaStream, { mimeType, audioBitsPerSecond: 16000 });
+      } catch (e) {
+        mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+      }
       mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) audioChunks.push(e.data);
       };
@@ -745,27 +749,13 @@
         if (!isCallActive || isCeremonyFinished || !vadHasSpeech || audioChunks.length === 0) return;
         const blob = new Blob(audioChunks, { type: mimeType });
         audioChunks = [];
-        if (blob.size < 1200) return;
+        if (blob.size < 1400) {
+          if (isCallActive && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) startWhisperListening();
+          return;
+        }
 
         const durationSec = Math.max(0.5, (Date.now() - whisperRecordingStart) / 1000);
-        updateStatus("Transcribing with Whisper...", "cyan");
-        try {
-          const resp = await fetch("/api/stt", {
-            method: "POST",
-            headers: { "Content-Type": mimeType },
-            body: blob
-          });
-          const data = await resp.json();
-          const text = (data.text || "").trim();
-          if (text && isCallActive && !isCeremonyFinished) {
-            sendTurn(text, false, durationSec);
-          } else if (isCallActive && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) {
-            startWhisperListening();
-          }
-        } catch (err) {
-          console.warn("Whisper STT request error:", err);
-          if (isCallActive && !isHeroSpeaking && !isTurnInFlight) startWhisperListening();
-        }
+        await sendVoiceTurn(blob, mimeType, durationSec);
       };
 
       mediaRecorder.start(250);
@@ -774,6 +764,7 @@
 
       const analyser = vadAudioCtx._analyser;
       const buf = new Uint8Array(analyser.fftSize);
+      let speechCandidateStart = 0;
       const monitorVolume = () => {
         if (!isCallActive || isMuted || isHeroSpeaking || isTurnInFlight || isCeremonyFinished || !mediaRecorder || mediaRecorder.state !== "recording") {
           return;
@@ -786,8 +777,9 @@
         }
         const rms = Math.sqrt(sum / buf.length);
 
-        if (rms > 0.012) {
-          if (!vadHasSpeech) {
+        if (rms > 0.025) {
+          if (!speechCandidateStart) speechCandidateStart = Date.now();
+          if (!vadHasSpeech && (Date.now() - speechCandidateStart >= 300)) {
             vadHasSpeech = true;
             utteranceStartTime = Date.now();
             updateStatus("Hearing your voice (Whisper HD)...", "cyan");
@@ -796,13 +788,16 @@
             clearTimeout(vadSilenceTimer);
             vadSilenceTimer = null;
           }
-        } else if (vadHasSpeech && !vadSilenceTimer) {
-          vadSilenceTimer = setTimeout(() => {
-            vadSilenceTimer = null;
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-              mediaRecorder.stop();
-            }
-          }, 1200);
+        } else {
+          speechCandidateStart = 0;
+          if (vadHasSpeech && !vadSilenceTimer) {
+            vadSilenceTimer = setTimeout(() => {
+              vadSilenceTimer = null;
+              if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+              }
+            }, 1000);
+          }
         }
         vadRafId = requestAnimationFrame(monitorVolume);
       };
@@ -1012,8 +1007,25 @@
       }
     }
 
+    let sharedAudioEl = null;
+
+    function unlockSharedAudio() {
+      if (!sharedAudioEl) {
+        sharedAudioEl = new Audio();
+      }
+      // Unlock iOS Safari autoplay inside user-click gesture using tiny silent WAV
+      try {
+        sharedAudioEl.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+        sharedAudioEl.play().then(() => { sharedAudioEl.pause(); }).catch(() => {});
+      } catch (e) {}
+    }
+
     window.addEventListener("DOMContentLoaded", () => {
       preloadStage1Greeting();
+      fetch("/api/stt/status")
+        .then(r => r.json())
+        .then(d => { whisperEnabled = Boolean(d.whisper_enabled); })
+        .catch(() => { whisperEnabled = false; });
     });
 
     function toggleCall() {
@@ -1108,12 +1120,16 @@
       hideIntro();
       setCoreState("core-idle");
       updateStatus("Connecting to Hero...", "purple");
+      unlockSharedAudio();
 
-      // Use instant zero-latency Chrome en-IN Web Speech API
-      // Start recognition synchronously inside the user-click gesture so Chrome never blocks it
-      whisperEnabled = false;
-      initSpeechRecognition();
-      startRecognitionSafe();
+      // Use Whisper HD single-hop (/api/voice-turn) if configured, else Chrome en-US
+      if (whisperEnabled) {
+        await initWhisperVAD();
+      }
+      if (!whisperEnabled) {
+        initSpeechRecognition();
+        startRecognitionSafe();
+      }
 
       if (preloadedGreetingBlobUrl) {
         // Play preloaded Stage 1 greeting instantaneously (<50ms)
@@ -1247,6 +1263,79 @@
         currentAudio = null;
       }
       isHeroSpeaking = false;
+    }
+
+    async function sendVoiceTurn(audioBlob, mimeType, durationSec = 0.0) {
+      if (isCeremonyFinished || !isCallActive || isTurnInFlight) return;
+      isTurnInFlight = true;
+      setCoreState("core-idle");
+      updateStatus("Hero is listening & sensing...", "purple");
+
+      if (currentTurnAbortController) {
+        try { currentTurnAbortController.abort(); } catch (e) {}
+      }
+      currentTurnAbortController = new AbortController();
+
+      try {
+        const qs = new URLSearchParams({
+          session_id: currentSessionId,
+          current_stage: String(currentStage),
+          voice: selectedVoice,
+          audio_duration_sec: String(durationSec),
+          user_name: context.user_name || ""
+        });
+        const resp = await fetch(`/api/voice-turn?${qs.toString()}`, {
+          method: "POST",
+          headers: { "Content-Type": mimeType },
+          signal: currentTurnAbortController.signal,
+          body: audioBlob
+        });
+        if (!isCallActive) {
+          isTurnInFlight = false;
+          return;
+        }
+        const data = await resp.json();
+        if (data.empty_speech || !data.user_transcript) {
+          isTurnInFlight = false;
+          if (isCallActive && !isHeroSpeaking && !isCeremonyFinished) {
+            startWhisperListening();
+          }
+          return;
+        }
+
+        appendMessage("user", data.user_transcript, false);
+        if (data.session_id) currentSessionId = data.session_id;
+        currentStage = data.current_stage;
+        updateStageUI(currentStage);
+        if (data.user_name) {
+          context.user_name = data.user_name;
+          const varInput = document.getElementById("varName");
+          if (varInput) varInput.value = data.user_name;
+        }
+        if (data.emotion) applyEmotionFeedback(data.emotion);
+        if (data.prosody) applyProsodyTelemetry(data.prosody);
+        if (data.trajectory) renderTrajectoryArc(data.trajectory);
+        if (data.manifestation_board) updateManifestationBoardUI(data.manifestation_board, currentStage);
+
+        playSpeech(data.hero_response, () => {
+          appendMessage("hero", data.hero_response, false, data.stage_name, data.emotion);
+        }, data.audio_base64 || null);
+
+        if (data.is_finished) {
+          isCeremonyFinished = true;
+          stopRecognitionSafe();
+        }
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          isTurnInFlight = false;
+          return;
+        }
+        console.warn("Voice turn error:", err);
+        isTurnInFlight = false;
+        if (isCallActive && !isHeroSpeaking && !isCeremonyFinished) {
+          startWhisperListening();
+        }
+      }
     }
 
     async function sendTurn(userMessage, wasInterrupted, durationSec = 0.0, isManualText = false) {
@@ -1456,7 +1545,8 @@
           : (audioBase64
             ? `data:audio/mpeg;base64,${audioBase64}`
             : `/api/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(selectedVoice)}&rate=${encodeURIComponent(currentVoiceRate)}&pitch=${encodeURIComponent(currentVoicePitch)}`);
-        currentAudio = new Audio(audioUrl);
+        currentAudio = sharedAudioEl || new Audio();
+        currentAudio.src = audioUrl;
 
         currentAudio.onplay = () => {
           revealMessage();
@@ -1483,14 +1573,18 @@
             setCoreState("core-listening");
             updateStatus("Hero is listening... (Speak freely)", "emerald");
             utteranceStartTime = Date.now();
-            // Always start a fresh SpeechRecognition instance after Hero finishes speaking
+            // Delay restart slightly (600ms for Whisper VAD, 200ms for Chrome STT) to avoid speaker tail
             setTimeout(() => {
               if (isCallActive && !isMuted && !isHeroSpeaking && !isTurnInFlight && !isCeremonyFinished) {
-                recognition = null;
-                initSpeechRecognition();
-                startRecognitionSafe();
+                if (whisperEnabled) {
+                  startWhisperListening();
+                } else {
+                  recognition = null;
+                  initSpeechRecognition();
+                  startRecognitionSafe();
+                }
               }
-            }, 200);
+            }, whisperEnabled ? 600 : 200);
           } else {
             setCoreState("core-idle");
             updateStatus("Ready", "slate");

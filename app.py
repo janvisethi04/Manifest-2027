@@ -130,6 +130,31 @@ async def stt_status():
         "model": GROQ_WHISPER_MODEL if GROQ_API_KEY else None
     })
 
+async def _transcribe_whisper_bytes(audio_bytes: bytes, content_type: str = "audio/webm") -> str:
+    """Transcribe raw audio bytes via Groq whisper-large-v3-turbo."""
+    if not GROQ_API_KEY or not audio_bytes or len(audio_bytes) < 800:
+        return ""
+    ext = "mp4" if "mp4" in content_type else ("ogg" if "ogg" in content_type else "webm")
+    form = aiohttp.FormData()
+    form.add_field("file", audio_bytes, filename=f"speech.{ext}", content_type=content_type)
+    form.add_field("model", GROQ_WHISPER_MODEL)
+    form.add_field("response_format", "json")
+    form.add_field("prompt", "Manifest 2027, Janvi, The Sovereign, calmly, sunlit terrace, Hinglish, kuch nahi.")
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            data=form,
+            timeout=aiohttp.ClientTimeout(total=10.0)
+        ) as resp:
+            if resp.status != 200:
+                err_txt = await resp.text()
+                raise RuntimeError(f"Groq Whisper HTTP {resp.status}: {err_txt[:150]}")
+            data = await resp.json()
+            return (data.get("text") or "").strip()
+
+
 @app.post("/api/stt")
 async def transcribe_whisper(request: Request):
     """Transcribe recorded browser audio via Groq Whisper API (supports Indian English & Hinglish)."""
@@ -141,28 +166,9 @@ async def transcribe_whisper(request: Request):
         return JSONResponse({"success": True, "text": ""})
 
     content_type = request.headers.get("content-type", "audio/webm")
-    ext = "mp4" if "mp4" in content_type else ("ogg" if "ogg" in content_type else "webm")
-
-    form = aiohttp.FormData()
-    form.add_field("file", audio_bytes, filename=f"speech.{ext}", content_type=content_type)
-    form.add_field("model", GROQ_WHISPER_MODEL)
-    form.add_field("response_format", "json")
-    form.add_field("prompt", "Manifest 2027, Janvi, The Sovereign, calmly, sunlit terrace, Hinglish, kuch nahi.")
-
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api.groq.com/openai/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-                data=form,
-                timeout=aiohttp.ClientTimeout(total=12.0)
-            ) as resp:
-                if resp.status != 200:
-                    err_txt = await resp.text()
-                    return JSONResponse({"success": False, "error": err_txt}, status_code=resp.status)
-                data = await resp.json()
-                text = (data.get("text") or "").strip()
-                return JSONResponse({"success": True, "text": text})
+        text = await _transcribe_whisper_bytes(audio_bytes, content_type)
+        return JSONResponse({"success": True, "text": text})
     except Exception as e:
         print(f"[Whisper STT Error] {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
@@ -190,41 +196,47 @@ async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_
         print(f"[TTS Inline Error] {e}")
         return None
 
-@app.post("/api/chat")
-async def process_chat_turn(req: ChatRequest):
-    """Process conversation turn with full isolated per-user session memory and inline TTS."""
+async def _execute_chat_turn(
+    user_message: str,
+    was_interrupted: bool,
+    current_stage: int,
+    voice: Optional[str],
+    context: Optional[Dict[str, Any]],
+    audio_duration_sec: float,
+    session_id: Optional[str],
+    extra_fields: Optional[Dict[str, Any]] = None,
+) -> JSONResponse:
+    """Shared turn execution + inline TTS + metrics logging for /api/chat and /api/voice-turn."""
     t0 = time.perf_counter()
     import uuid
-    sess_id = req.session_id
+    sess_id = session_id
     if not sess_id or sess_id.strip() in ["", "default"]:
         sess_id = f"sess_{uuid.uuid4().hex[:12]}"
 
-    safe_user_message = (req.user_message or "")[:2000]
-    
-    # Isolate session: if starting at stage 1 without an explicit user name, generate fresh brain
-    if req.current_stage == 1 and not (req.context and req.context.get("user_name")):
-        brain = HeroBrain(context=req.context or {})
+    safe_user_message = (user_message or "")[:2000]
+
+    if current_stage == 1 and not (context and context.get("user_name")):
+        brain = HeroBrain(context=context or {})
         SESSION_STORE[sess_id] = brain
     elif sess_id not in SESSION_STORE:
-        brain = HeroBrain(context=req.context or {})
+        brain = HeroBrain(context=context or {})
         SESSION_STORE[sess_id] = brain
     else:
         brain = SESSION_STORE[sess_id]
-        if req.context:
-            brain.context.update(req.context)
-            
-    brain.current_stage = req.current_stage
-    
+        if context:
+            brain.context.update(context)
+
+    brain.current_stage = current_stage
+
     turn_result = await asyncio.to_thread(
         brain.process_turn,
         user_message=safe_user_message,
-        was_interrupted=req.was_interrupted,
-        audio_duration_sec=req.audio_duration_sec or 0.0
+        was_interrupted=was_interrupted,
+        audio_duration_sec=audio_duration_sec or 0.0
     )
-    
-    # Generate TTS audio inline in the same serverless invocation to eliminate second HTTP round-trip
+
     emotion = turn_result.get("emotion", {})
-    voice_name = req.voice or DEFAULT_VOICE
+    voice_name = voice or DEFAULT_VOICE
     rate_val = emotion.get("voice_rate", "+0%")
     pitch_val = emotion.get("voice_pitch", "+0Hz")
     audio_bytes = await synthesize_tts_bytes(turn_result["hero_response"], voice_name, rate_val, pitch_val)
@@ -244,7 +256,7 @@ async def process_chat_turn(req: ChatRequest):
         "audio_bytes": len(audio_bytes) if audio_bytes else 0,
     }))
 
-    return JSONResponse({
+    payload = {
         "success": True,
         "session_id": sess_id,
         "source": src,
@@ -259,7 +271,64 @@ async def process_chat_turn(req: ChatRequest):
         "prosody": turn_result.get("prosody", {}),
         "trajectory": turn_result.get("trajectory", []),
         "manifestation_board": turn_result.get("manifestation_board", {})
-    })
+    }
+    if extra_fields:
+        payload.update(extra_fields)
+    return JSONResponse(payload)
+
+
+@app.post("/api/chat")
+async def process_chat_turn(req: ChatRequest):
+    """Process text conversation turn with full isolated per-user session memory and inline TTS."""
+    return await _execute_chat_turn(
+        user_message=req.user_message,
+        was_interrupted=req.was_interrupted,
+        current_stage=req.current_stage,
+        voice=req.voice,
+        context=req.context,
+        audio_duration_sec=req.audio_duration_sec or 0.0,
+        session_id=req.session_id,
+    )
+
+
+@app.post("/api/voice-turn")
+async def process_voice_turn(
+    request: Request,
+    session_id: Optional[str] = None,
+    current_stage: int = 1,
+    voice: Optional[str] = DEFAULT_VOICE,
+    audio_duration_sec: float = 0.0,
+    user_name: Optional[str] = "",
+):
+    """Single-hop voice turn: Groq Whisper STT -> Brain -> Inline Edge-TTS."""
+    if not GROQ_API_KEY:
+        return JSONResponse({"success": False, "error": "GROQ_API_KEY not configured"}, status_code=503)
+
+    audio_bytes = await request.body()
+    content_type = request.headers.get("content-type", "audio/webm")
+    t_stt = time.perf_counter()
+    try:
+        transcript = await _transcribe_whisper_bytes(audio_bytes, content_type)
+    except Exception as e:
+        APP_METRICS["recent_errors"].append({"type": "whisper_voice_turn", "error": str(e)[:120], "ts": int(time.time())})
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+    stt_ms = round((time.perf_counter() - t_stt) * 1000, 1)
+    # Ignore empty or non-word background noise clips
+    if not transcript or len(transcript.strip()) < 2 or not any(c.isalpha() for c in transcript):
+        return JSONResponse({"success": True, "empty_speech": True, "stt_ms": stt_ms})
+
+    ctx = {"user_name": user_name} if user_name else {}
+    return await _execute_chat_turn(
+        user_message=transcript,
+        was_interrupted=False,
+        current_stage=current_stage,
+        voice=voice,
+        context=ctx,
+        audio_duration_sec=audio_duration_sec,
+        session_id=session_id,
+        extra_fields={"empty_speech": False, "user_transcript": transcript, "stt_ms": stt_ms},
+    )
 
 @app.get("/api/tts")
 async def generate_tts(
