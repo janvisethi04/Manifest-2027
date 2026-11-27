@@ -217,7 +217,13 @@ async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_
         APP_METRICS["tts_errors"] += 1
         APP_METRICS["recent_errors"].append({"type": "tts_inline", "error": str(e)[:120], "ts": int(time.time())})
         print(f"[TTS Inline Error] {e}")
-        return None
+        try:
+            fallback = edge_tts.Communicate(text, DEFAULT_VOICE)
+            chunks = [c["data"] async for c in fallback.stream() if c["type"] == "audio"]
+            fb_bytes = b"".join(chunks)
+            return fb_bytes or None
+        except Exception:
+            return None
 
 async def _execute_chat_turn(
     user_message: str,

@@ -4,7 +4,7 @@ Configuration for Hero: Manifest 2027 Voice Agent
 import os
 
 # Voice Configuration (Warm, expressive Multilingual Neural voices)
-DEFAULT_VOICE = "en-US-AndrewMultilingualNeural"  # Warm, empathetic, natural human-like voice
+DEFAULT_VOICE = "en-US-AndrewNeural"              # Warm, empathetic, natural human-like voice with emotional prosody
 HINDI_VOICE = "hi-IN-MadhurNeural"                  # Natural Hindi/Hinglish voice
 FEMALE_VOICE = "en-US-AvaMultilingualNeural"        # Warm, expressive feminine voice
 
