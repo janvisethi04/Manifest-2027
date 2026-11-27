@@ -330,6 +330,21 @@
 
       </div>
 
+      <!-- Voice Selector Dropdown -->
+      <div class="w-full max-w-sm flex items-center justify-between bg-white/85 border border-slate-200/80 px-3.5 py-2 rounded-xl mt-2.5 shadow-xs text-xs">
+        <span class="text-slate-500 font-semibold flex items-center space-x-1.5">
+          <span>🎙️</span>
+          <span>Hero Voice:</span>
+        </span>
+        <select id="voiceSelector" onchange="handleVoiceSelectChange(this.value)" class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-purple-400/40 cursor-pointer">
+          <option value="en-US-AndrewNeural" selected>Andrew (Warm Male)</option>
+          <option value="en-US-AvaNeural">Ava (Warm Female)</option>
+          <option value="en-US-EmmaNeural">Emma (Gentle Female)</option>
+          <option value="en-IN-NeerjaNeural">Neerja (Indian Female)</option>
+          <option value="en-US-BrianNeural">Brian (Calm Male)</option>
+        </select>
+      </div>
+
       <!-- Quick Micro-Telemetry Footer -->
       <div class="flex items-center space-x-4 pt-3 text-[11px] text-slate-500 font-medium">
         <div class="flex items-center space-x-1.5">
@@ -562,6 +577,16 @@
     let currentStage = 1;
     let interruptCount = 0;
     let selectedVoice = "en-US-AndrewNeural";
+
+    function handleVoiceSelectChange(newVoice) {
+      selectedVoice = newVoice || "en-US-AndrewNeural";
+      if (preloadedGreetingBlobUrl) {
+        try { URL.revokeObjectURL(preloadedGreetingBlobUrl); } catch (e) {}
+        preloadedGreetingBlobUrl = null;
+      }
+      isGreetingPreloading = false;
+      preloadStage1Greeting();
+    }
     let currentVoiceRate = "+0%";
     let currentVoicePitch = "+0Hz";
     let utteranceStartTime = 0;
