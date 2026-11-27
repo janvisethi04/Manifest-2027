@@ -173,15 +173,33 @@ async def transcribe_whisper(request: Request):
         print(f"[Whisper STT Error] {e}")
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+def _naturalize_prosody(rate_val: str, pitch_val: str) -> tuple[str, str]:
+    """Keep Edge-TTS rate & pitch subtle so emotional modulation sounds warm, never robotic."""
+    try:
+        r = int(str(rate_val).replace("%", "").replace("+", ""))
+        r = max(-6, min(4, r))
+        rate_clean = f"{r:+d}%"
+    except Exception:
+        rate_clean = "-2%"
+    try:
+        p = int(str(pitch_val).lower().replace("hz", "").replace("+", ""))
+        p = max(-2, min(2, p))
+        pitch_clean = f"{p:+d}Hz"
+    except Exception:
+        pitch_clean = "+0Hz"
+    return rate_clean, pitch_clean
+
+
 async def synthesize_tts_bytes(text: str, voice_name: str, rate_val: str, pitch_val: str) -> Optional[bytes]:
-    """Synthesize MP3 bytes with in-memory cache."""
+    """Synthesize MP3 bytes with in-memory cache and natural emotional prosody."""
     if not text or not text.strip():
         return None
-    cache_key = f"{voice_name}_{rate_val}_{pitch_val}_{text.strip()}"
+    rate_clean, pitch_clean = _naturalize_prosody(rate_val, pitch_val)
+    cache_key = f"{voice_name}_{rate_clean}_{pitch_clean}_{text.strip()}"
     if cache_key in TTS_CACHE:
         return TTS_CACHE[cache_key]
     try:
-        communicate = edge_tts.Communicate(text, voice_name, rate=rate_val, pitch=pitch_val)
+        communicate = edge_tts.Communicate(text, voice_name, rate=rate_clean, pitch=pitch_clean)
         chunks = []
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":

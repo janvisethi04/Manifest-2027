@@ -3,10 +3,10 @@ Configuration for Hero: Manifest 2027 Voice Agent
 """
 import os
 
-# Voice Configuration (Zero cost, high-definition Edge-TTS neural models)
-DEFAULT_VOICE = "en-US-ChristopherNeural"      # Deep, calm, reflective masculine voice
-HINDI_VOICE = "hi-IN-MadhurNeural"              # Natural Hindi/Hinglish voice
-FEMALE_VOICE = "en-US-AvaNeural"                # Warm, empathetic feminine voice
+# Voice Configuration (Warm, expressive Multilingual Neural voices)
+DEFAULT_VOICE = "en-US-AndrewMultilingualNeural"  # Warm, empathetic, natural human-like voice
+HINDI_VOICE = "hi-IN-MadhurNeural"                  # Natural Hindi/Hinglish voice
+FEMALE_VOICE = "en-US-AvaMultilingualNeural"        # Warm, expressive feminine voice
 
 # Speech-To-Text Configuration
 STT_ENERGY_THRESHOLD = 300                      # Microphone sensitivity threshold
